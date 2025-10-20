@@ -4,6 +4,7 @@ mod ui;
 mod visualization;
 
 use eframe::egui;
+use image::GenericImageView;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -25,9 +26,15 @@ fn main() -> Result<(), eframe::Error> {
     let rt = tokio::runtime::Runtime::new().expect("Failed to initialize Tokio runtime");
     let guard = rt.enter();
 
+    let icon_data = load_icon().unwrap_or_else(|| {
+        log::warn!("Failed to load icon from assets");
+        create_default_icon()
+    });
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1400.0, 900.0]),
+            .with_inner_size([1400.0, 900.0])
+            .with_icon(std::sync::Arc::new(icon_data)),
         ..Default::default()
     };
 
@@ -43,6 +50,39 @@ fn main() -> Result<(), eframe::Error> {
     drop(rt);
     
     result
+}
+
+fn load_icon() -> Option<egui::IconData> {
+    let icon_bytes = include_bytes!("../assets/icon.png");
+    let image = image::load_from_memory(icon_bytes).ok()?;
+    let rgba = image.to_rgba8();
+    let (w, h) = image.dimensions();
+    
+    Some(egui::IconData {
+        rgba: rgba.into_raw(),
+        width: w,
+        height: h,
+    })
+}
+
+fn create_default_icon() -> egui::IconData {
+    // Create a simple 64x64 default icon (music note blue square)
+    let size = 64;
+    let mut rgba = vec![0u8; (size * size * 4) as usize];
+    
+    // Fill with light blue background
+    for i in (0..rgba.len()).step_by(4) {
+        rgba[i] = 100;      // R
+        rgba[i + 1] = 150;  // G
+        rgba[i + 2] = 200;  // B
+        rgba[i + 3] = 255;  // A
+    }
+    
+    egui::IconData {
+        rgba,
+        width: size as u32,
+        height: size as u32,
+    }
 }
 
 /// Main application state
