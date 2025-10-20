@@ -1,6 +1,7 @@
 use crate::RecogNotesApp;
 use eframe::egui;
 
+#[allow(clippy::too_many_lines)]
 pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
     egui::CentralPanel::default().show(ctx, |ui| {
         // Top bar: Title + Status
@@ -28,8 +29,8 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
                 let backend_url = app.backend_url.clone();
                 tokio::spawn(async move {
                     match crate::backend_client::check_health(&backend_url).await {
-                        Ok(_) => log::info!("✓ Backend OK"),
-                        Err(e) => log::error!("✗ {}", e),
+                        Ok(()) => log::info!("✓ Backend OK"),
+                        Err(e) => log::error!("✗ {e}"),
                     }
                 });
                 app.backend_connected = true;
@@ -38,40 +39,60 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
 
         ui.separator();
 
-        // Device and volume controls
+        // Voice profile and device controls - side by side
         ui.horizontal(|ui| {
-            ui.label("Input device:");
-            let input_devices = crate::audio::AudioManager::get_input_devices();
-            let selected_input = app.selected_input_device.clone().unwrap_or_else(|| "Default".to_string());
+            // Voice profile selector
+            ui.label("Voice Profile:");
             
-            egui::ComboBox::from_id_source("input_device_selector")
-                .selected_text(&selected_input)
+            let available_profiles = ["no_profile", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"];
+            
+            egui::ComboBox::from_id_source("voice_profile_combo")
+                .selected_text(app.selected_profile.as_str())
                 .show_ui(ui, |ui| {
-                    for device in input_devices {
-                        if ui.selectable_label(selected_input == device, &device).clicked() {
-                            app.selected_input_device = Some(device);
-                        }
+                    for profile in &available_profiles {
+                        ui.selectable_value(&mut app.selected_profile, (*profile).to_string(), *profile);
                     }
                 });
 
+            // Show profile info
+            if app.selected_profile != "no_profile" {
+                let profile_info = match app.selected_profile.as_str() {
+                    "soprano" => "C4-C6 (261-1047 Hz)",
+                    "mezzo" => "A3-A5 (220-880 Hz)",
+                    "alto" => "F3-F5 (175-698 Hz)",
+                    "tenor" => "C3-C5 (131-523 Hz)",
+                    "baritone" => "A2-A4 (110-440 Hz)",
+                    "bass" => "C2-C4 (65-261 Hz)",
+                    _ => "",
+                };
+                ui.label(egui::RichText::new(profile_info).size(11.0).color(egui::Color32::GRAY));
+            }
+
             ui.separator();
+
+            // Input device selector
+            ui.label("Input device:");
+            let input_devices = crate::audio::AudioManager::get_input_devices();
             
-            ui.label("Volume:");
-            ui.add(egui::Slider::new(&mut app.input_volume, 0.0..=1.0)
-                .text("vol")
-                .step_by(0.05)
-                .show_value(true));
+            egui::ComboBox::from_id_source("input_device_combo")
+                .selected_text(app.selected_input_device.as_deref().unwrap_or("Default"))
+                .show_ui(ui, |ui| {
+                    // Always show "Default" option
+                    ui.selectable_value(&mut app.selected_input_device, None, "Default");
+                    
+                    // Show all other devices
+                    for device in input_devices {
+                        if device != "Default" {
+                            ui.selectable_value(&mut app.selected_input_device, Some(device.clone()), device);
+                        }
+                    }
+                });
         });
 
         ui.separator();
 
         // Control bar
         ui.horizontal(|ui| {
-            ui.label("Session:");
-            ui.text_edit_singleline(&mut app.session_title);
-            
-            ui.separator();
-            
             if ui.button(if app.recording {
                 "⏹ Stop"
             } else {
@@ -95,7 +116,7 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
 
         // Error display
         if let Some(error) = &app.last_error {
-            ui.colored_label(egui::Color32::RED, format!("⚠ {}", error));
+            ui.colored_label(egui::Color32::RED, format!("⚠ {error}"));
         }
 
         ui.separator();
@@ -115,6 +136,7 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
             &app.detected_notes,
             &app.notes_with_timestamps,
             notes_response.rect,
+            &app.selected_profile,
         );
     });
 }

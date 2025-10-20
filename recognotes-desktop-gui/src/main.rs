@@ -23,7 +23,7 @@ fn main() -> Result<(), eframe::Error> {
 
     // Create Tokio runtime for async operations
     let rt = tokio::runtime::Runtime::new().expect("Failed to initialize Tokio runtime");
-    let _guard = rt.enter();
+    let guard = rt.enter();
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -39,18 +39,20 @@ fn main() -> Result<(), eframe::Error> {
         }),
     );
 
-    drop(_guard);
+    drop(guard);
     drop(rt);
     
     result
 }
 
 /// Main application state
+#[allow(clippy::struct_excessive_bools)]
 pub struct RecogNotesApp {
     // Device selection
     selected_input_device: Option<String>,
     #[allow(dead_code)]
     selected_output_device: Option<String>,
+    #[allow(dead_code)]
     input_volume: f32, // 0.0 to 1.0
 
     // UI state
@@ -61,6 +63,7 @@ pub struct RecogNotesApp {
     // Settings
     #[allow(dead_code)]
     sample_rate: u32,
+    #[allow(dead_code)]
     session_title: String,
     
     // Audio
@@ -78,6 +81,9 @@ pub struct RecogNotesApp {
     
     // Backend URL
     backend_url: String,
+    
+    // Voice profile for filtering notes
+    selected_profile: String,  // "no_profile", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"
     
     // Continuous recording
     #[allow(dead_code)]
@@ -167,6 +173,7 @@ impl RecogNotesApp {
             last_error: None,
             is_analyzing: false,
             backend_url,
+            selected_profile: "no_profile".to_string(),
             last_analysis_time: std::time::Instant::now(),
             analysis_interval: std::time::Duration::from_millis(10),
             chunk_size_bytes,
@@ -197,9 +204,12 @@ impl RecogNotesApp {
         self.sliding_window_buffer.extend(std::iter::repeat_n(0i16, self.sliding_window_size));
         log::debug!("Initialized sliding window buffer with {} silent samples", self.sliding_window_size);
         
+        // Set the device on the audio manager before starting
         let mut manager = self.audio_manager.write();
+        manager.set_device(self.selected_input_device.clone());
+        
         if let Err(e) = manager.start_recording() {
-            self.last_error = Some(format!("Failed to start recording: {}", e));
+            self.last_error = Some(format!("Failed to start recording: {e}"));
             self.recording = false;
         }
     }
@@ -209,7 +219,7 @@ impl RecogNotesApp {
         
         let mut manager = self.audio_manager.write();
         if let Err(e) = manager.stop_recording() {
-            self.last_error = Some(format!("Failed to stop recording: {}", e));
+            self.last_error = Some(format!("Failed to stop recording: {e}"));
         }
     }
 
@@ -252,32 +262,38 @@ impl RecogNotesApp {
         let backend_url = self.backend_url.clone();
         let sender = Arc::clone(&self.notes_sender);
         let data_len = audio_data.len();
+        let profile = if self.selected_profile == "no_profile" {
+            None
+        } else {
+            Some(self.selected_profile.clone())
+        };
+        let profile_display = profile.as_deref().unwrap_or("no_profile").to_string();
 
         // Spawn async task to send to backend
         tokio::spawn(async move {
             let client_start = std::time::Instant::now();
-            match backend_client::analyze_audio(&backend_url, audio_data, sample_rate).await {
+            match backend_client::analyze_audio(&backend_url, audio_data, sample_rate, profile).await {
                 Ok(notes) => {
                     let total_client_ms = client_start.elapsed().as_millis();
-                    log::debug!(
-                        "Backend response in {}ms: {} notes from {}B audio",
-                        total_client_ms,
+                    log::info!(
+                        "Backend response [{}]: {} notes from {}B audio in {}ms",
+                        profile_display,
                         notes.len(),
-                        data_len
+                        data_len,
+                        total_client_ms
                     );
                     let _ = sender.lock().unwrap().send(notes);
                 }
                 Err(e) => {
                     let total_client_ms = client_start.elapsed().as_millis();
-                    log::error!("Backend error after {}ms: {}", total_client_ms, e);
+                    log::error!("Backend error after {total_client_ms}ms: {e}");
                 }
             }
         });
 
         // Receive any notes from completed async tasks
+        let now = std::time::Instant::now();
         if let Ok(notes) = self.notes_receiver.try_recv() {
-            let now = std::time::Instant::now();
-
             if !notes.is_empty() {
                 log::info!("🎵 Received {} notes from backend", notes.len());
                 for note in &notes {
@@ -290,7 +306,7 @@ impl RecogNotesApp {
             }
 
             // Clean up old notes (older than display duration)
-            let cutoff_time = now - self.note_display_duration;
+            let cutoff_time = now.checked_sub(self.note_display_duration).unwrap();
             self.notes_with_timestamps.retain(|(_, timestamp)| *timestamp > cutoff_time);
 
             // Build current detected_notes from the recent history (for UI display)
@@ -311,8 +327,7 @@ impl RecogNotesApp {
             self.detected_notes.sort_by(|a, b| a.note.cmp(&b.note));
         } else {
             // If no new notes received, clean up old ones based on display duration
-            let now = std::time::Instant::now();
-            let cutoff_time = now - self.note_display_duration;
+            let cutoff_time = now.checked_sub(self.note_display_duration).unwrap();
             self.notes_with_timestamps.retain(|(_, timestamp)| *timestamp > cutoff_time);
 
             // If all notes have expired, clear display

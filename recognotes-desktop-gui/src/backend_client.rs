@@ -8,6 +8,9 @@ pub struct AnalyzeRequest {
     /// Base64-encoded audio data (faster than Vec<u8> JSON encoding)
     pub audio_data: String,
     pub sample_rate: u32,
+    /// Optional voice profile for filtering notes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -24,10 +27,12 @@ pub async fn analyze_audio(
     backend_url: &str,
     audio_data: Vec<u8>,
     sample_rate: u32,
+    profile: Option<String>,
 ) -> Result<Vec<DetectedNote>, String> {
-    let url = format!("{}/analyze", backend_url);
+    let url = format!("{backend_url}/analyze");
     let start = Instant::now();
     let data_size = audio_data.len();
+    let profile_str = profile.as_deref().unwrap_or("no_profile").to_string();
     
     // Encode audio as base64 (much faster than JSON array encoding)
     let audio_b64 = STANDARD.encode(&audio_data);
@@ -35,15 +40,17 @@ pub async fn analyze_audio(
     let request = AnalyzeRequest {
         audio_data: audio_b64.clone(),
         sample_rate,
+        profile,
     };
 
     // Create new client for each request (reqwest handles connection pooling internally)
     let client = reqwest::Client::new();
     
     log::debug!(
-        "Sending to backend: {} bytes audio (base64), {} Hz sample rate, payload size: {}B",
+        "Sending to backend: {} bytes audio (base64), {} Hz sample rate, profile: {}, payload size: {}B",
         data_size,
         sample_rate,
+        profile_str,
         audio_b64.len()
     );
     
@@ -56,7 +63,7 @@ pub async fn analyze_audio(
     )
     .await
     .map_err(|_| "Backend request timeout (5s)".to_string())?
-    .map_err(|e| format!("Failed to send request: {}", e))?;
+    .map_err(|e| format!("Failed to send request: {e}"))?;
 
     if !response.status().is_success() {
         return Err(format!("Backend returned status: {}", response.status()));
@@ -65,7 +72,7 @@ pub async fn analyze_audio(
     let analyze_response: AnalyzeResponse = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     let elapsed = start.elapsed().as_millis();
     log::debug!(
@@ -82,7 +89,7 @@ pub async fn analyze_audio(
 /// Check if backend is healthy
 /// Uses fast timeout to fail quickly if backend is down
 pub async fn check_health(backend_url: &str) -> Result<(), String> {
-    let url = format!("{}/health", backend_url);
+    let url = format!("{backend_url}/health");
     
     let client = reqwest::Client::new();
     let response = tokio::time::timeout(
@@ -91,7 +98,7 @@ pub async fn check_health(backend_url: &str) -> Result<(), String> {
     )
     .await
     .map_err(|_| "Backend health check timeout".to_string())?
-    .map_err(|e| format!("Failed to connect to backend: {}", e))?;
+    .map_err(|e| format!("Failed to connect to backend: {e}"))?;
 
     if response.status().is_success() {
         Ok(())

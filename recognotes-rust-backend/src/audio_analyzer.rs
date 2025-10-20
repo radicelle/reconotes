@@ -4,6 +4,7 @@ use num_complex::Complex;
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
+use crate::models::VoiceProfile;
 
 // Constants for note-to-frequency mapping
 const KNOWN_NOTE_FREQUENCY: f32 = 440.0; // A4 = 440 Hz
@@ -116,6 +117,22 @@ impl AudioAnalyzer {
     pub fn new() -> Self {
         Self {
             lookup: FrequencyToNoteLookup::new(),
+        }
+    }
+    
+    /// Check if a frequency is within the allowed voice profile range
+    /// If profile is NoProfile, all frequencies are allowed
+    /// Otherwise, aggressively filters frequencies outside the profile range
+    #[allow(dead_code)]
+    fn is_frequency_in_profile(frequency: f32, profile: VoiceProfile) -> bool {
+        match profile.freq_range() {
+            None => true, // NoProfile allows all frequencies
+            Some((min_freq, max_freq)) => {
+                // Aggressive filtering: must be strictly within range
+                // Allow ±10% margin for frequency estimation errors
+                let margin = (max_freq - min_freq) * 0.05; // 5% margin on each side
+                frequency >= (min_freq - margin) && frequency <= (max_freq + margin)
+            }
         }
     }
     
@@ -278,7 +295,7 @@ impl AudioAnalyzer {
     /// Analyze audio chunk and return detected notes with confidence and intensity
     /// Returns multiple notes if multiple strong peaks are detected
     /// OPTIMIZED: Parallel peak-to-note conversion with rayon (faster note lookup for top peaks)
-    pub fn analyze_chunk_multi(&self, audio_data: &[f32], sample_rate: u32) -> Vec<(String, f32, f32)> {
+    pub fn analyze_chunk_multi(&self, audio_data: &[f32], sample_rate: u32, profile: VoiceProfile) -> Vec<(String, f32, f32)> {
         if audio_data.is_empty() {
             return Vec::new();
         }
@@ -298,6 +315,12 @@ impl AudioAnalyzer {
             .into_par_iter()
             .take(5)  // Limit to top 5 peaks
             .filter_map(|(frequency, power)| {
+                // Aggressively filter by voice profile if one is selected
+                if !Self::is_frequency_in_profile(frequency, profile) {
+                    log::debug!("Filtered out frequency {:.2} Hz - outside profile {:?}", frequency, profile);
+                    return None;
+                }
+                
                 self.lookup.find_closest_note(frequency)
                     .map(|(note_name, note_confidence)| (note_name, note_confidence, power))
             })
@@ -379,7 +402,7 @@ impl AudioAnalyzer {
     /// Returns multiple detected notes per chunk
     /// Only returns notes with confidence > 0.5 to filter out noise
     /// OPTIMIZED: Parallel byte-to-sample conversion with rayon for large buffers
-    pub fn analyze_raw_bytes(&self, audio_data: &[u8], sample_rate: u32) -> Vec<(String, f32, f32)> {
+    pub fn analyze_raw_bytes(&self, audio_data: &[u8], sample_rate: u32, profile: VoiceProfile) -> Vec<(String, f32, f32)> {
         if audio_data.len() < 2 {
             return Vec::new();
         }
@@ -416,10 +439,10 @@ impl AudioAnalyzer {
         let analysis_start = std::time::Instant::now();
         let mut notes = if samples.len() >= 2048 {
             // Use multi-peak detection for better harmonic detection
-            self.analyze_chunk_multi(&samples, sample_rate)
+            self.analyze_chunk_multi(&samples, sample_rate, profile)
         } else if samples.len() >= 480 {
             // For 10ms chunks (480 @ 48kHz), use optimized path: minimal windowing overhead
-            self.analyze_chunk_multi(&samples, sample_rate)
+            self.analyze_chunk_multi(&samples, sample_rate, profile)
         } else {
             // Fallback to single note detection if not enough samples
             if let Some((note, confidence)) = self.analyze_chunk(&samples, sample_rate) {

@@ -6,6 +6,8 @@ pub struct AudioManager {
     stream: Option<cpal::Stream>,
     audio_buffer: Arc<Mutex<Vec<i16>>>,
     recording: bool,
+    #[allow(dead_code)]
+    selected_device: Option<String>,
 }
 
 impl AudioManager {
@@ -15,7 +17,13 @@ impl AudioManager {
             stream: None,
             audio_buffer: Arc::new(Mutex::new(Vec::new())),
             recording: false,
+            selected_device: None,
         }
+    }
+    
+    /// Set the device to use for recording
+    pub fn set_device(&mut self, device_name: Option<String>) {
+        self.selected_device = device_name;
     }
 
     /// Get list of available input devices
@@ -51,22 +59,37 @@ impl AudioManager {
         devices
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn start_recording(&mut self) -> Result<(), String> {
         if self.recording {
             return Err("Already recording".to_string());
         }
 
         let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| "No input device available".to_string())?;
+        
+        // Get the selected device, or default if none selected
+        let device = if let Some(device_name) = &self.selected_device {
+            // Find device by name
+            host.input_devices()
+                .map_err(|e| format!("Failed to get input devices: {e}"))?
+                .find(|d| {
+                    d.name()
+                        .ok()
+                        .is_some_and(|name| name == *device_name)
+                })
+                .ok_or_else(|| format!("Device '{device_name}' not found"))?
+        } else {
+            // None means use default device
+            host.default_input_device()
+                .ok_or_else(|| "No input device available".to_string())?
+        };
 
         log::info!("Selected input device: {}", device.name().unwrap_or_default());
 
         // Get supported configs and find a compatible one
         let supported_configs = device
             .supported_input_configs()
-            .map_err(|e| format!("Failed to get supported configs: {}", e))?
+            .map_err(|e| format!("Failed to get supported configs: {e}"))?
             .collect::<Vec<_>>();
 
         log::info!("Found {} supported configurations", supported_configs.len());
@@ -139,7 +162,7 @@ impl AudioManager {
                         let mut buffer = audio_buffer_i16.lock().unwrap();
                         buffer.extend_from_slice(data);
                     },
-                    |err| log::error!("Stream error: {}", err),
+                    |err| log::error!("Stream error: {err}"),
                 )
             }
             cpal::SampleFormat::U16 => {
@@ -149,11 +172,12 @@ impl AudioManager {
                         let mut buffer = audio_buffer_i16.lock().unwrap();
                         for &sample in data {
                             // Convert U16 to I16
-                            let i16_sample = (sample as i32 - 32768) as i16;
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_lossless)]
+                            let i16_sample = (i32::from(sample) - 32768) as i16;
                             buffer.push(i16_sample);
                         }
                     },
-                    |err| log::error!("Stream error: {}", err),
+                    |err| log::error!("Stream error: {err}"),
                 )
             }
             cpal::SampleFormat::F32 => {
@@ -163,22 +187,23 @@ impl AudioManager {
                         let mut buffer = audio_buffer_i16.lock().unwrap();
                         for &sample in data {
                             // Convert F32 to I16: [-1.0, 1.0] -> [-32768, 32767]
+                            #[allow(clippy::cast_possible_truncation)]
                             let i16_sample = (sample * 32767.0).clamp(-32768.0, 32767.0) as i16;
                             buffer.push(i16_sample);
                         }
                     },
-                    |err| log::error!("Stream error: {}", err),
+                    |err| log::error!("Stream error: {err}"),
                 )
             }
         }
-        .map_err(|e| format!("Failed to build stream: {}", e))?;
+        .map_err(|e| format!("Failed to build stream: {e}"))?;
 
-        stream.play().map_err(|e| format!("Failed to play stream: {}", e))?;
+        stream.play().map_err(|e| format!("Failed to play stream: {e}"))?;
 
         self.stream = Some(stream);
         self.recording = true;
 
-        log::info!("Recording started at {} Hz", actual_sample_rate);
+        log::info!("Recording started at {actual_sample_rate} Hz");
         Ok(())
     }
 
@@ -195,8 +220,7 @@ impl AudioManager {
         self.recording = false;
 
         // Extract audio data from buffer
-        let mut buffer = self.audio_buffer.lock().unwrap();
-        let samples = buffer.drain(..).collect::<Vec<_>>();
+        let samples = self.audio_buffer.lock().unwrap().drain(..).collect::<Vec<_>>();
 
         // Convert i16 samples to bytes
         let mut audio_data = Vec::with_capacity(samples.len() * 2);
@@ -220,6 +244,7 @@ impl AudioManager {
         // Add all available samples to sliding buffer
         sliding_buffer.extend_from_slice(&buffer);
         buffer.clear();
+        drop(buffer);
 
         // Keep only the most recent buffer_size samples (1 second window)
         if sliding_buffer.len() > buffer_size {
@@ -229,9 +254,9 @@ impl AudioManager {
     }
 
     /// Get buffered audio without stopping recording (for continuous analysis)
-    /// Returns up to chunk_size bytes to keep payloads consistent
+    /// Returns up to `chunk_size` bytes to keep payloads consistent
     #[allow(dead_code)]
-    pub fn get_buffered_audio_chunk(&mut self, chunk_size: usize) -> Result<Vec<u8>, String> {
+    pub fn get_buffered_audio_chunk(&self, chunk_size: usize) -> Result<Vec<u8>, String> {
         if !self.recording {
             return Err("Not recording".to_string());
         }
@@ -246,6 +271,7 @@ impl AudioManager {
         let take_count = std::cmp::min(buffer.len(), max_samples);
         
         let samples: Vec<i16> = buffer.drain(..take_count).collect();
+        drop(buffer);
 
         // Convert i16 samples to bytes
         let mut audio_data = Vec::with_capacity(samples.len() * 2);
@@ -257,11 +283,11 @@ impl AudioManager {
     }
 
     #[allow(dead_code)]
-    pub fn is_recording(&self) -> bool {
+    pub const fn is_recording(&self) -> bool {
         self.recording
     }
 
-    pub fn sample_rate(&self) -> u32 {
+    pub const fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 }

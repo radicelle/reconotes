@@ -7,6 +7,7 @@ use crate::{
     utils::{confidence_weight, low_frequency_bonus, note_to_frequency},
     AppState, ANALYZER,
 };
+use crate::models::VoiceProfile;
 
 /// Analyze audio endpoint - processes raw audio and returns detected notes
 pub async fn analyze_audio(
@@ -35,6 +36,12 @@ pub async fn analyze_audio(
         }
     };
 
+    // Get voice profile from request (default to NoProfile if not specified)
+    let profile = audio.get_profile();
+    if profile != VoiceProfile::NoProfile {
+        log::info!("Using voice profile: {:?}", profile);
+    }
+
     // Track timing for analysis
     let mut analysis_ms = 0u128;
     let mut convert_us = 0u128;
@@ -55,7 +62,8 @@ pub async fn analyze_audio(
         let pre_analysis = std::time::Instant::now();
 
         // Analyze the audio (FFT processing is internally optimized)
-        let notes_raw = ANALYZER.analyze_raw_bytes(&audio_bytes, audio.sample_rate);
+        // Pass the voice profile for aggressive filtering
+        let notes_raw = ANALYZER.analyze_raw_bytes(&audio_bytes, audio.sample_rate, profile);
 
         analysis_ms = pre_analysis.elapsed().as_millis();
 

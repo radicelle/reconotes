@@ -12,17 +12,36 @@ const ALL_NOTES: &[&str] = &[
     "C7", "C#7", "D7", "D#7", "E7", "F7", "F#7", "G7", "G#7", "A7", "A#7", "B7",
 ];
 
+/// Get the note range for a voice profile
+#[allow(dead_code)]
+pub fn get_profile_range(profile: &str) -> Option<(usize, usize)> {
+    match profile {
+        "soprano" => Some((24, 48)),     // C4-C6
+        "mezzo" => Some((21, 45)),       // A3-A5
+        "alto" => Some((17, 41)),        // F3-F5
+        "tenor" => Some((12, 36)),       // C3-C5
+        "baritone" => Some((9, 33)),     // A2-A4
+        "bass" => Some((0, 24)),         // C2-C4
+        _ => None,
+    }
+}
+
 /// Draw vertical bars for all notes with fade effect based on time
+#[allow(clippy::too_many_lines)]
 pub fn draw_vertical_bars_with_fade(
-    ui: &mut egui::Ui,
+    ui: &egui::Ui,
     _detected_notes: &[DetectedNote],
     notes_with_timestamps: &[(DetectedNote, Instant)],
     rect: egui::Rect,
+    selected_profile: &str,
 ) {
     let painter = ui.painter();
     
     // Draw background
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(30, 30, 40));
+    
+    // Get profile range for highlighting
+    let profile_range = get_profile_range(selected_profile);
     
     let now = Instant::now();
     let fade_duration = std::time::Duration::from_millis(600);
@@ -53,6 +72,7 @@ pub fn draw_vertical_bars_with_fade(
     }
     
     let num_notes = ALL_NOTES.len();
+    #[allow(clippy::cast_precision_loss)]
     let bar_width = (rect.width() - 10.0) / num_notes as f32;
     let padding_left = 5.0;
     let padding_bottom = 30.0;
@@ -60,16 +80,27 @@ pub fn draw_vertical_bars_with_fade(
     
     // Draw each note bar
     for (idx, &note_name) in ALL_NOTES.iter().enumerate() {
-        let x = rect.min.x + padding_left + (idx as f32 * bar_width);
+        #[allow(clippy::cast_precision_loss, clippy::suboptimal_flops)]
+        let x = (idx as f32).mul_add(bar_width, rect.min.x + padding_left);
         
-        // Draw background track (empty bar)
+        // Check if this note is within the selected profile range
+        let in_profile_range = profile_range
+            .is_some_and(|(start, end)| idx >= start && idx <= end);
+        
+        // Draw background track (empty bar) with different color if in profile range
+        let bg_color = if in_profile_range {
+            egui::Color32::from_rgb(90, 90, 110)  // Slightly brighter for profile range
+        } else {
+            egui::Color32::from_rgb(60, 60, 80)   // Normal background
+        };
+        
         painter.rect_filled(
             egui::Rect::from_min_max(
                 egui::pos2(x + 1.0, rect.max.y - padding_bottom),
                 egui::pos2(x + bar_width - 1.0, rect.max.y - 25.0),
             ),
             1.0,
-            egui::Color32::from_rgb(60, 60, 80),
+            bg_color,
         );
         
         // Draw filled bar if note detected
@@ -89,14 +120,22 @@ pub fn draw_vertical_bars_with_fade(
                 faded_color,
             );
             
-            // Draw border with fade
+            // Draw border with fade - thicker/brighter if in profile range
+            let border_color = if in_profile_range {
+                apply_fade_to_color(faded_color, 1.2)  // Slightly brighter
+            } else {
+                faded_color
+            };
+            
+            let border_width = if in_profile_range { 2.0 } else { 1.0 };
+            
             painter.rect_stroke(
                 egui::Rect::from_min_max(
                     egui::pos2(x + 1.0, bar_top),
                     egui::pos2(x + bar_width - 1.0, rect.max.y - 25.0),
                 ),
                 0.0,
-                egui::Stroke::new(1.0, faded_color),
+                egui::Stroke::new(border_width, border_color),
             );
         }
         
@@ -108,6 +147,8 @@ pub fn draw_vertical_bars_with_fade(
             } else {
                 egui::Color32::from_rgb(100, 100, 120)
             }
+        } else if in_profile_range {
+            egui::Color32::from_rgb(150, 150, 180)  // Highlight profile range notes
         } else {
             egui::Color32::from_rgb(100, 100, 120)
         };
@@ -150,7 +191,8 @@ fn apply_fade_to_color(color: egui::Color32, alpha: f32) -> egui::Color32 {
     let r = color.r();
     let g = color.g();
     let b = color.b();
-    let a = (color.a() as f32 * alpha_clamp) as u8;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let a = (f32::from(color.a()) * alpha_clamp) as u8;
     
     egui::Color32::from_rgba_unmultiplied(r, g, b, a)
 }
@@ -173,7 +215,7 @@ fn confidence_to_color(confidence: f32) -> egui::Color32 {
 
 /// Draw horizontal bars for notes in a compact panel (legacy)
 #[allow(dead_code)]
-pub fn draw_horizontal_bars(ui: &mut egui::Ui, notes: &[DetectedNote], rect: egui::Rect) {
+pub fn draw_horizontal_bars(ui: &egui::Ui, notes: &[DetectedNote], rect: egui::Rect) {
     if notes.is_empty() {
         return;
     }
@@ -185,6 +227,7 @@ pub fn draw_horizontal_bars(ui: &mut egui::Ui, notes: &[DetectedNote], rect: egu
     let painter = ui.painter();
     
     let num_notes = sorted_notes.len();
+    #[allow(clippy::cast_precision_loss)]
     let bar_height = ((rect.height() - 15.0) / num_notes as f32).clamp(20.0, 35.0);
     let padding_top = 8.0;
     let padding_left = 70.0;
@@ -193,7 +236,8 @@ pub fn draw_horizontal_bars(ui: &mut egui::Ui, notes: &[DetectedNote], rect: egu
     
     // Draw each bar
     for (idx, note) in sorted_notes.iter().enumerate() {
-        let y = rect.min.y + padding_top + (idx as f32 * bar_height);
+        #[allow(clippy::cast_precision_loss, clippy::suboptimal_flops)]
+        let y = (idx as f32).mul_add(bar_height, rect.min.y + padding_top);
         
         // Only draw if within visible area
         if y + bar_height > rect.max.y {
@@ -262,14 +306,14 @@ pub fn draw_horizontal_bars(ui: &mut egui::Ui, notes: &[DetectedNote], rect: egu
 
 /// Draw note visualization (legacy, not used)
 #[allow(dead_code)]
-pub fn draw_note_visualization(ui: &mut egui::Ui, notes: &[DetectedNote]) {
+pub const fn draw_note_visualization(ui: &egui::Ui, notes: &[DetectedNote]) {
     let _ = notes; // unused
     let _ = ui; // unused
 }
 
 /// Draw spectrum visualization (legacy, not used)
 #[allow(dead_code)]
-pub fn draw_spectrum_visualization(ui: &mut egui::Ui, notes: &[DetectedNote]) {
+pub const fn draw_spectrum_visualization(ui: &egui::Ui, notes: &[DetectedNote]) {
     let _ = notes; // unused
     let _ = ui; // unused
 }
