@@ -58,9 +58,7 @@ pub struct RecogNotesApp {
     backend_checked: bool,  // Track if we've already checked health
     
     // Settings
-    bpm: u32,
     sample_rate: u32,
-    use_metronome: bool,
     session_title: String,
     
     // Audio
@@ -153,9 +151,7 @@ impl RecogNotesApp {
             recording: false,
             backend_connected: false,
             backend_checked: false,
-            bpm: 100,
             sample_rate,
-            use_metronome: true,
             session_title: "Recording".to_string(),
             audio_manager: Arc::new(RwLock::new(audio::AudioManager::new(sample_rate))),
             detected_notes: Vec::new(),
@@ -188,6 +184,11 @@ impl RecogNotesApp {
         self.recording = true;
         self.last_error = None;
         
+        // Pre-fill the sliding window buffer with silence (2 seconds worth)
+        self.sliding_window_buffer.clear();
+        self.sliding_window_buffer.extend(std::iter::repeat(0i16).take(self.sliding_window_size));
+        log::debug!("Initialized sliding window buffer with {} silent samples", self.sliding_window_size);
+        
         let mut manager = self.audio_manager.write();
         if let Err(e) = manager.start_recording() {
             self.last_error = Some(format!("Failed to start recording: {}", e));
@@ -216,7 +217,7 @@ impl RecogNotesApp {
             return;
         }
 
-        // Add new audio to sliding window
+        // Add new audio to sliding window (replaces oldest samples with newest)
         let manager = self.audio_manager.write();
         manager.add_to_sliding_buffer(&mut self.sliding_window_buffer, self.sliding_window_size);
         drop(manager);
@@ -224,18 +225,17 @@ impl RecogNotesApp {
         // Get the actual sample rate from the audio manager after it has been configured.
         let sample_rate = self.audio_manager.read().sample_rate();
 
-        // Only analyze if we have at least 1 second of audio
-        let min_samples_for_analysis = sample_rate as usize * 2; // 2 seconds of audio
-        if self.sliding_window_buffer.len() < min_samples_for_analysis {
+        // Buffer is always pre-filled with silence, so we always have 2 seconds ready
+        if self.sliding_window_buffer.len() < self.sliding_window_size {
             log::debug!(
-                "Waiting for audio buffer: {}/{} samples",
+                "Waiting for sliding buffer to fill: {}/{} samples",
                 self.sliding_window_buffer.len(),
-                min_samples_for_analysis
+                self.sliding_window_size
             );
             return;
         }
 
-        // Convert sliding window buffer to bytes
+        // Convert sliding window buffer to bytes and send immediately
         let mut audio_data = Vec::with_capacity(self.sliding_window_buffer.len() * 2);
         for &sample in &self.sliding_window_buffer {
             audio_data.extend_from_slice(&sample.to_le_bytes());

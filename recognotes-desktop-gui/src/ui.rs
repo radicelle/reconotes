@@ -18,6 +18,22 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
             if app.recording {
                 ui.colored_label(egui::Color32::RED, "● Recording");
             }
+
+            ui.separator();
+
+            // Backend URL control in top bar
+            ui.label("Backend:");
+            ui.text_edit_singleline(&mut app.backend_url);
+            if ui.small_button("✓").clicked() {
+                let backend_url = app.backend_url.clone();
+                tokio::spawn(async move {
+                    match crate::backend_client::check_health(&backend_url).await {
+                        Ok(_) => log::info!("✓ Backend OK"),
+                        Err(e) => log::error!("✗ {}", e),
+                    }
+                });
+                app.backend_connected = true;
+            }
         });
 
         ui.separator();
@@ -53,13 +69,6 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
         ui.horizontal(|ui| {
             ui.label("Session:");
             ui.text_edit_singleline(&mut app.session_title);
-            
-            ui.separator();
-            
-            ui.label("BPM:");
-            ui.add(egui::Slider::new(&mut app.bpm, 30..=300).text("bpm").fixed_decimals(0).show_value(true));
-            
-            ui.checkbox(&mut app.use_metronome, "Metronome");
             
             ui.separator();
             
@@ -102,21 +111,5 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
         
         // Draw notes spectrum with vertical bars
         crate::visualization::draw_vertical_bars(ui, &app.detected_notes, notes_response.rect);
-        
-        // Compact backend info at very bottom
-        ui.horizontal(|ui| {
-            ui.small("Backend:");
-            ui.text_edit_singleline(&mut app.backend_url);
-            if ui.small_button("✓").clicked() {
-                let backend_url = app.backend_url.clone();
-                tokio::spawn(async move {
-                    match crate::backend_client::check_health(&backend_url).await {
-                        Ok(_) => log::info!("✓ Backend OK"),
-                        Err(e) => log::error!("✗ {}", e),
-                    }
-                });
-                app.backend_connected = true;
-            }
-        });
     });
 }
