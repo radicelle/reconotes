@@ -109,7 +109,12 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
             egui::Sense::hover(),
         );
         
-        // Draw notes spectrum with vertical bars
-        crate::visualization::draw_vertical_bars(ui, &app.detected_notes, notes_response.rect);
+        // Draw notes spectrum with vertical bars and fade effect
+        crate::visualization::draw_vertical_bars_with_fade(
+            ui,
+            &app.detected_notes,
+            &app.notes_with_timestamps,
+            notes_response.rect,
+        );
     });
 }

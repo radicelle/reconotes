@@ -35,6 +35,7 @@ impl AudioManager {
     }
 
     /// Get list of available output devices
+    #[allow(dead_code)]
     pub fn get_output_devices() -> Vec<String> {
         let host = cpal::default_host();
         let mut devices = vec!["Default".to_string()];
@@ -99,7 +100,7 @@ impl AudioManager {
             // Priority 3: Mono with any format (flexible format)
             .or_else(|| supported_configs.iter().find(|c| c.channels() == 1))
             // Priority 4: First available config (any channels, any format)
-            .or_else(|| supported_configs.iter().next())
+            .or_else(|| supported_configs.first())
             .ok_or_else(|| "No audio configuration available".to_string())?;
 
         // Use the maximum sample rate the config supports (usually best quality)
@@ -229,6 +230,7 @@ impl AudioManager {
 
     /// Get buffered audio without stopping recording (for continuous analysis)
     /// Returns up to chunk_size bytes to keep payloads consistent
+    #[allow(dead_code)]
     pub fn get_buffered_audio_chunk(&mut self, chunk_size: usize) -> Result<Vec<u8>, String> {
         if !self.recording {
             return Err("Not recording".to_string());
@@ -254,6 +256,7 @@ impl AudioManager {
         Ok(audio_data)
     }
 
+    #[allow(dead_code)]
     pub fn is_recording(&self) -> bool {
         self.recording
     }

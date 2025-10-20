@@ -49,6 +49,7 @@ fn main() -> Result<(), eframe::Error> {
 pub struct RecogNotesApp {
     // Device selection
     selected_input_device: Option<String>,
+    #[allow(dead_code)]
     selected_output_device: Option<String>,
     input_volume: f32, // 0.0 to 1.0
 
@@ -58,16 +59,19 @@ pub struct RecogNotesApp {
     backend_checked: bool,  // Track if we've already checked health
     
     // Settings
+    #[allow(dead_code)]
     sample_rate: u32,
     session_title: String,
     
     // Audio
+    #[allow(clippy::arc_with_non_send_sync)]
     audio_manager: Arc<RwLock<audio::AudioManager>>,
     
     // Results
     detected_notes: Vec<DetectedNote>,
     detected_notes_history: Vec<(DetectedNote, f64)>, // (note, timestamp)
     last_error: Option<String>,
+    #[allow(dead_code)]
     is_analyzing: bool,
     #[allow(dead_code)]
     last_backend_timestamp: Option<f64>, // Track backend analysis timestamp
@@ -76,10 +80,13 @@ pub struct RecogNotesApp {
     backend_url: String,
     
     // Continuous recording
+    #[allow(dead_code)]
     last_analysis_time: std::time::Instant,
+    #[allow(dead_code)]
     analysis_interval: std::time::Duration,
     
     // Fixed buffer size for smooth analysis (10ms at 48kHz = 480 samples)
+    #[allow(dead_code)]
     chunk_size_bytes: usize,
     
     // Channel for receiving notes from async tasks
@@ -153,6 +160,7 @@ impl RecogNotesApp {
             backend_checked: false,
             sample_rate,
             session_title: "Recording".to_string(),
+            #[allow(clippy::arc_with_non_send_sync)]
             audio_manager: Arc::new(RwLock::new(audio::AudioManager::new(sample_rate))),
             detected_notes: Vec::new(),
             detected_notes_history: Vec::new(),
@@ -186,7 +194,7 @@ impl RecogNotesApp {
         
         // Pre-fill the sliding window buffer with silence (2 seconds worth)
         self.sliding_window_buffer.clear();
-        self.sliding_window_buffer.extend(std::iter::repeat(0i16).take(self.sliding_window_size));
+        self.sliding_window_buffer.extend(std::iter::repeat_n(0i16, self.sliding_window_size));
         log::debug!("Initialized sliding window buffer with {} silent samples", self.sliding_window_size);
         
         let mut manager = self.audio_manager.write();
@@ -341,7 +349,11 @@ impl eframe::App for RecogNotesApp {
         
         // Request repaint to keep analysis running at the sound format frequency
         // This ensures the update loop runs continuously even without mouse movement
+        // Also needed for smooth fade animation
         if self.recording {
+            ctx.request_repaint();
+        } else if !self.notes_with_timestamps.is_empty() {
+            // Keep repainting while notes are fading out (for 2 seconds)
             ctx.request_repaint();
         }
 

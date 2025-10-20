@@ -1,5 +1,6 @@
 use eframe::egui;
 use crate::DetectedNote;
+use std::time::Instant;
 
 /// All possible musical notes to display
 const ALL_NOTES: &[&str] = &[
@@ -11,17 +12,44 @@ const ALL_NOTES: &[&str] = &[
     "C7", "C#7", "D7", "D#7", "E7", "F7", "F#7", "G7", "G#7", "A7", "A#7", "B7",
 ];
 
-/// Draw vertical bars for all notes
-pub fn draw_vertical_bars(ui: &mut egui::Ui, detected_notes: &[DetectedNote], rect: egui::Rect) {
+/// Draw vertical bars for all notes with fade effect based on time
+pub fn draw_vertical_bars_with_fade(
+    ui: &mut egui::Ui,
+    _detected_notes: &[DetectedNote],
+    notes_with_timestamps: &[(DetectedNote, Instant)],
+    rect: egui::Rect,
+) {
     let painter = ui.painter();
     
     // Draw background
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(30, 30, 40));
     
-    // Create a map of detected notes with their confidence
-    let mut note_map: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
-    for note in detected_notes {
-        note_map.insert(note.note.clone(), note.confidence);
+    let now = Instant::now();
+    let fade_duration = std::time::Duration::from_millis(600);
+    
+    // Create a map of notes with their max intensity and fade factor
+    let mut note_map: std::collections::HashMap<String, (f32, f32)> = std::collections::HashMap::new();
+    
+    for (note, timestamp) in notes_with_timestamps {
+        let elapsed = now.saturating_duration_since(*timestamp);
+        let fade_alpha = if elapsed < fade_duration {
+            1.0 - (elapsed.as_secs_f32() / fade_duration.as_secs_f32())
+        } else {
+            0.0
+        };
+        
+        // Store max intensity and max fade_alpha for this note
+        note_map
+            .entry(note.note.clone())
+            .and_modify(|(intensity, alpha)| {
+                if note.intensity > *intensity {
+                    *intensity = note.intensity;
+                }
+                if fade_alpha > *alpha {
+                    *alpha = fade_alpha;
+                }
+            })
+            .or_insert((note.intensity, fade_alpha));
     }
     
     let num_notes = ALL_NOTES.len();
@@ -33,8 +61,6 @@ pub fn draw_vertical_bars(ui: &mut egui::Ui, detected_notes: &[DetectedNote], re
     // Draw each note bar
     for (idx, &note_name) in ALL_NOTES.iter().enumerate() {
         let x = rect.min.x + padding_left + (idx as f32 * bar_width);
-        let confidence = note_map.get(note_name).copied().unwrap_or(0.0);
-        let bar_height = max_bar_height * confidence;
         
         // Draw background track (empty bar)
         painter.rect_filled(
@@ -47,8 +73,11 @@ pub fn draw_vertical_bars(ui: &mut egui::Ui, detected_notes: &[DetectedNote], re
         );
         
         // Draw filled bar if note detected
-        if confidence > 0.0 {
-            let color = confidence_to_color(confidence);
+        if let Some((intensity, fade_alpha)) = note_map.get(note_name) {
+            let bar_height = max_bar_height * intensity;
+            let base_color = intensity_to_color(*intensity);
+            let faded_color = apply_fade_to_color(base_color, *fade_alpha);
+            
             let bar_top = rect.max.y - padding_bottom - bar_height;
             
             painter.rect_filled(
@@ -57,32 +86,38 @@ pub fn draw_vertical_bars(ui: &mut egui::Ui, detected_notes: &[DetectedNote], re
                     egui::pos2(x + bar_width - 1.0, rect.max.y - 25.0),
                 ),
                 1.0,
-                color,
+                faded_color,
             );
             
-            // Draw border
+            // Draw border with fade
             painter.rect_stroke(
                 egui::Rect::from_min_max(
                     egui::pos2(x + 1.0, bar_top),
                     egui::pos2(x + bar_width - 1.0, rect.max.y - 25.0),
                 ),
                 0.0,
-                egui::Stroke::new(1.0, color),
+                egui::Stroke::new(1.0, faded_color),
             );
         }
         
         // Draw note label at bottom
         let font_size = if num_notes > 48 { 7.0 } else { 9.0 };
+        let label_color = if let Some((intensity, _)) = note_map.get(note_name) {
+            if *intensity > 0.3 {
+                intensity_to_color(*intensity)
+            } else {
+                egui::Color32::from_rgb(100, 100, 120)
+            }
+        } else {
+            egui::Color32::from_rgb(100, 100, 120)
+        };
+        
         painter.text(
             egui::pos2(x + bar_width / 2.0, rect.max.y - 10.0),
             egui::Align2::CENTER_CENTER,
             note_name,
             egui::FontId::monospace(font_size),
-            if confidence > 0.5 {
-                confidence_to_color(confidence)
-            } else {
-                egui::Color32::from_rgb(100, 100, 120)
-            },
+            label_color,
         );
     }
     
@@ -94,7 +129,34 @@ pub fn draw_vertical_bars(ui: &mut egui::Ui, detected_notes: &[DetectedNote], re
     );
 }
 
-/// Convert confidence value to color
+/// Convert intensity value to color (brighter = more intense)
+fn intensity_to_color(intensity: f32) -> egui::Color32 {
+    let intensity = intensity.clamp(0.0, 1.0);
+    
+    if intensity >= 0.8 {
+        egui::Color32::GREEN
+    } else if intensity >= 0.6 {
+        egui::Color32::from_rgb(255, 200, 0) // Yellow
+    } else if intensity >= 0.4 {
+        egui::Color32::from_rgb(100, 200, 255) // Light Blue
+    } else {
+        egui::Color32::from_rgb(150, 150, 200) // Light Gray
+    }
+}
+
+/// Apply fade effect to a color by reducing its alpha
+fn apply_fade_to_color(color: egui::Color32, alpha: f32) -> egui::Color32 {
+    let alpha_clamp = alpha.clamp(0.0, 1.0);
+    let r = color.r();
+    let g = color.g();
+    let b = color.b();
+    let a = (color.a() as f32 * alpha_clamp) as u8;
+    
+    egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
+/// Convert confidence value to color (legacy - still used for horizontal bars)
+#[allow(dead_code)]
 fn confidence_to_color(confidence: f32) -> egui::Color32 {
     let confidence = confidence.clamp(0.0, 1.0);
     
@@ -110,6 +172,7 @@ fn confidence_to_color(confidence: f32) -> egui::Color32 {
 }
 
 /// Draw horizontal bars for notes in a compact panel (legacy)
+#[allow(dead_code)]
 pub fn draw_horizontal_bars(ui: &mut egui::Ui, notes: &[DetectedNote], rect: egui::Rect) {
     if notes.is_empty() {
         return;
@@ -122,7 +185,7 @@ pub fn draw_horizontal_bars(ui: &mut egui::Ui, notes: &[DetectedNote], rect: egu
     let painter = ui.painter();
     
     let num_notes = sorted_notes.len();
-    let bar_height = ((rect.height() - 15.0) / num_notes as f32).min(35.0).max(20.0);
+    let bar_height = ((rect.height() - 15.0) / num_notes as f32).clamp(20.0, 35.0);
     let padding_top = 8.0;
     let padding_left = 70.0;
     let padding_right = 50.0;
@@ -198,6 +261,7 @@ pub fn draw_horizontal_bars(ui: &mut egui::Ui, notes: &[DetectedNote], rect: egu
 }
 
 /// Draw note visualization (legacy, not used)
+#[allow(dead_code)]
 pub fn draw_note_visualization(ui: &mut egui::Ui, notes: &[DetectedNote]) {
     let _ = notes; // unused
     let _ = ui; // unused
