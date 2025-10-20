@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "recognotes-rust-backend",
+    "recognotes-desktop-gui",
+]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
