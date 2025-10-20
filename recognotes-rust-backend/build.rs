@@ -21,22 +21,23 @@ fn main() {
         if source.exists() {
             match fs::copy(&source, &dest) {
                 Ok(bytes) => {
+                    #[allow(clippy::cast_precision_loss)]
                     let size_mb = bytes as f64 / (1024.0 * 1024.0);
-                    println!("cargo:warning=✅ Copied {} to root folder ({:.2} MB)", exe_name, size_mb);
+                    println!("cargo:warning=✅ Copied {exe_name} to root folder ({size_mb:.2} MB)");
                     
                     // Show OS-compatible run command
                     let run_cmd = if cfg!(target_os = "windows") {
-                        format!(".\\{}", exe_name)
+                        format!(".\\{exe_name}")
                     } else if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
-                        format!("./{}", exe_name)
+                        format!("./{exe_name}")
                     } else {
                         exe_name.to_string()
                     };
                     
-                    println!("cargo:warning=📌 To run the executable:  {}", run_cmd);
+                    println!("cargo:warning=📌 To run the executable:  {run_cmd}");
                 }
                 Err(e) => {
-                    println!("cargo:warning=❌ Failed to copy executable: {}", e);
+                    println!("cargo:warning=❌ Failed to copy executable: {e}");
                 }
             }
         }

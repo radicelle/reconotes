@@ -6,7 +6,6 @@ pub struct AudioManager {
     stream: Option<cpal::Stream>,
     audio_buffer: Arc<Mutex<Vec<i16>>>,
     recording: bool,
-    #[allow(dead_code)]
     selected_device: Option<String>,
 }
 

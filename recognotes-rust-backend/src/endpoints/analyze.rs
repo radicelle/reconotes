@@ -39,7 +39,7 @@ pub async fn analyze_audio(
     // Get voice profile from request (default to NoProfile if not specified)
     let profile = audio.get_profile();
     if profile != VoiceProfile::NoProfile {
-        log::info!("Using voice profile: {:?}", profile);
+        log::info!("Using voice profile: {profile:?}");
     }
 
     // Track timing for analysis
@@ -70,21 +70,16 @@ pub async fn analyze_audio(
         // Convert to result format with confidence filter (>= 10%)
         // Keep top 3 notes with smart scoring: prefer lower frequencies (bass voices)
         let pre_convert = std::time::Instant::now();
-        let notes: Vec<DetectedNote> = notes_raw
-            .into_iter()
-            .filter(|(_, confidence, _)| *confidence >= 0.10)
-            .map(|(note, confidence, intensity)| DetectedNote { note, confidence, intensity })
-            .collect();
 
         // OPTIMIZED: Pre-compute scores with frequency lookup cache
         // This avoids redundant note_to_frequency() and bonus calculations
-        let mut notes_with_scores: Vec<(DetectedNote, f32)> = notes
+        let mut notes_with_scores: Vec<(DetectedNote, f32)> = notes_raw
             .into_iter()
-            .map(|note| {
+            .filter(|(_, confidence, _)| *confidence >= 0.10)
+            .map(|(note, confidence, intensity)| {
+                let note = DetectedNote { note, confidence, intensity };
                 let freq = note_to_frequency(&note.note);
-                let score = (low_frequency_bonus(freq) * 0.7)
-                    + (confidence_weight(note.confidence) * 0.2)
-                    + (note.intensity * 0.1);
+                let score = note.intensity.mul_add(0.1, low_frequency_bonus(freq).mul_add(0.7, confidence_weight(note.confidence) * 0.2));
                 (note, score)
             })
             .collect();
@@ -119,21 +114,20 @@ pub async fn analyze_audio(
     let total_ms = request_start.elapsed().as_millis();
 
     // Log notes with confidence
-    if !result.notes.is_empty() {
+    if result.notes.is_empty() {
+        log::info!(
+            "REQUEST: bytes={audio_len}, analysis={analysis_ms}ms, convert={convert_us}us, serialize={serialize_ms}ms, TOTAL={total_ms}ms, NOTES: (none)"
+        );
+    } else {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let notes_str = result
             .notes
             .iter()
-            .map(|n| format!("{}({}%, {:.0})", n.note, (n.confidence * 100.0) as u32, n.intensity * 100.0))
+            .map(|n| format!("{}({}%, {:.0})", n.note, (n.confidence * 100.0).round() as u32, n.intensity * 100.0))
             .collect::<Vec<_>>()
             .join(", ");
         log::info!(
-            "REQUEST: bytes={}, analysis={}ms, convert={}us, serialize={}ms, TOTAL={}ms, NOTES: [{}]",
-            audio_len, analysis_ms, convert_us, serialize_ms, total_ms, notes_str
-        );
-    } else {
-        log::info!(
-            "REQUEST: bytes={}, analysis={}ms, convert={}us, serialize={}ms, TOTAL={}ms, NOTES: (none)",
-            audio_len, analysis_ms, convert_us, serialize_ms, total_ms
+            "REQUEST: bytes={audio_len}, analysis={analysis_ms}ms, convert={convert_us}us, serialize={serialize_ms}ms, TOTAL={total_ms}ms, NOTES: [{notes_str}]"
         );
     }
 

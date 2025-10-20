@@ -13,7 +13,6 @@ const ALL_NOTES: &[&str] = &[
 ];
 
 /// Get the note range for a voice profile
-#[allow(dead_code)]
 pub fn get_profile_range(profile: &str) -> Option<(usize, usize)> {
     match profile {
         "soprano" => Some((24, 48)),     // C4-C6

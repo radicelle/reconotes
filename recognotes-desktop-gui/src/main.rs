@@ -50,21 +50,11 @@ fn main() -> Result<(), eframe::Error> {
 pub struct RecogNotesApp {
     // Device selection
     selected_input_device: Option<String>,
-    #[allow(dead_code)]
-    selected_output_device: Option<String>,
-    #[allow(dead_code)]
-    input_volume: f32, // 0.0 to 1.0
 
     // UI state
     recording: bool,
     backend_connected: bool,
     backend_checked: bool,  // Track if we've already checked health
-    
-    // Settings
-    #[allow(dead_code)]
-    sample_rate: u32,
-    #[allow(dead_code)]
-    session_title: String,
     
     // Audio
     #[allow(clippy::arc_with_non_send_sync)]
@@ -74,26 +64,12 @@ pub struct RecogNotesApp {
     detected_notes: Vec<DetectedNote>,
     detected_notes_history: Vec<(DetectedNote, f64)>, // (note, timestamp)
     last_error: Option<String>,
-    #[allow(dead_code)]
-    is_analyzing: bool,
-    #[allow(dead_code)]
-    last_backend_timestamp: Option<f64>, // Track backend analysis timestamp
     
     // Backend URL
     backend_url: String,
     
     // Voice profile for filtering notes
     selected_profile: String,  // "no_profile", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"
-    
-    // Continuous recording
-    #[allow(dead_code)]
-    last_analysis_time: std::time::Instant,
-    #[allow(dead_code)]
-    analysis_interval: std::time::Duration,
-    
-    // Fixed buffer size for smooth analysis (10ms at 48kHz = 480 samples)
-    #[allow(dead_code)]
-    chunk_size_bytes: usize,
     
     // Channel for receiving notes from async tasks
     notes_receiver: std::sync::mpsc::Receiver<Vec<DetectedNote>>,
@@ -152,10 +128,6 @@ impl RecogNotesApp {
         let (tx, rx) = std::sync::mpsc::channel();
         let (health_tx, health_rx) = std::sync::mpsc::channel();
         
-        // Calculate chunk size for 10ms at the given sample rate
-        // At 48kHz: 48000 * 0.02 = 960 samples * 2 bytes/sample = 1920 bytes
-        let chunk_size_bytes = ((sample_rate as usize / 50) * 2).max(1920);
-        
         // Sliding window: 2 seconds of audio for better low-frequency resolution
         // At 48kHz: 48000 * 2 = 96000 samples
         let sliding_window_size = sample_rate as usize * 2;
@@ -164,24 +136,17 @@ impl RecogNotesApp {
             recording: false,
             backend_connected: false,
             backend_checked: false,
-            sample_rate,
-            session_title: "Recording".to_string(),
             #[allow(clippy::arc_with_non_send_sync)]
             audio_manager: Arc::new(RwLock::new(audio::AudioManager::new(sample_rate))),
             detected_notes: Vec::new(),
             detected_notes_history: Vec::new(),
             last_error: None,
-            is_analyzing: false,
             backend_url,
             selected_profile: "no_profile".to_string(),
-            last_analysis_time: std::time::Instant::now(),
-            analysis_interval: std::time::Duration::from_millis(10),
-            chunk_size_bytes,
             notes_receiver: rx,
             notes_sender: Arc::new(std::sync::Mutex::new(tx)),
             health_receiver: health_rx,
             health_sender: Arc::new(std::sync::Mutex::new(health_tx)),
-            last_backend_timestamp: None,
             notes_with_timestamps: Vec::new(),
             last_notes_received_time: std::time::Instant::now(),
             note_display_duration: std::time::Duration::from_secs(1),
@@ -190,8 +155,6 @@ impl RecogNotesApp {
             sliding_window_interval: std::time::Duration::from_millis(20),
             last_sliding_window_analysis: std::time::Instant::now(),
             selected_input_device: None,
-            selected_output_device: None,
-            input_volume: 1.0,
         }
     }
 

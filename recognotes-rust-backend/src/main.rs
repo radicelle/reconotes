@@ -6,13 +6,12 @@ mod utils;
 use actix_web::{web, App, HttpServer, HttpResponse, error};
 use std::sync::Mutex;
 use audio_analyzer::AudioAnalyzer;
-use once_cell::sync::Lazy;
 
 // Export for use in endpoints module
 pub use models::{AnalysisResult, AudioData, DetectedNote};
 
 // Global audio analyzer (lazy-initialized to avoid expensive setup)
-pub static ANALYZER: Lazy<AudioAnalyzer> = Lazy::new(AudioAnalyzer::new);
+pub static ANALYZER: std::sync::LazyLock<AudioAnalyzer> = std::sync::LazyLock::new(AudioAnalyzer::new);
 
 // In-memory storage for analysis results
 pub struct AppState {
@@ -38,8 +37,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::JsonConfig::default()
                 .limit(16 * 1024 * 1024) // 16MB limit
                 .error_handler(|err, _req| {
-                    let err_msg = format!("{}", err);
-                    log::error!("JSON parsing error: {}", err_msg);
+                    let err_msg = format!("{err}");
+                    log::error!("JSON parsing error: {err_msg}");
                     error::InternalError::from_response(
                         err,
                         HttpResponse::BadRequest().json(

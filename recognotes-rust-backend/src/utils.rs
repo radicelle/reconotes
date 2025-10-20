@@ -39,7 +39,7 @@ pub fn low_frequency_bonus(freq: f32) -> f32 {
 }
 
 /// Weight confidence scores
-pub fn confidence_weight(confidence: f32) -> f32 {
+pub const fn confidence_weight(confidence: f32) -> f32 {
     // Higher confidence = better score
     confidence.clamp(0.0, 1.0)
 }

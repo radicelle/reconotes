@@ -1,3 +1,10 @@
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::unused_self
+)]
+
 use std::f32::consts::PI;
 use rustfft::FftPlanner;
 use num_complex::Complex;
@@ -16,7 +23,8 @@ const MIN_OCTAVE: i32 = 1;  // C1 = 32.7 Hz (very low bass)
 const MAX_OCTAVE: i32 = 7;  // C7 = 2093 Hz (high soprano)
 
 /// Global FFT planner - reused across all requests
-/// Creating a new FftPlanner is very expensive, so we share one globally
+/// Creating a new `FftPlanner` is very expensive, so we share one globally
+#[allow(clippy::non_std_lazy_statics)]
 static FFT_PLANNER: Lazy<Mutex<FftPlanner<f32>>> = Lazy::new(|| Mutex::new(FftPlanner::new()));
 
 /// Pre-computed lookup table for frequency-to-note conversion
@@ -35,7 +43,7 @@ impl FrequencyToNoteLookup {
         
         // Generate natural notes (C, D, E, F, G, A, B) from octave 2 to 6
         for octave in MIN_OCTAVE..=MAX_OCTAVE {
-            for note_name in NOTE_NAMES.iter() {
+            for note_name in &NOTE_NAMES {
                 // Map natural notes to MIDI semitone positions
                 // C=0, D=2, E=4, F=5, G=7, A=9, B=11 (skips sharps/flats)
                 let note_semitones = match *note_name {
@@ -52,9 +60,10 @@ impl FrequencyToNoteLookup {
                 // Calculate MIDI note number
                 let note_num = (octave * 12) + note_semitones + 12; // C0 is MIDI 12
                 let semitones_from_a4 = note_num - 69; // A4 is MIDI 69
-                let frequency = KNOWN_NOTE_FREQUENCY * 2.0_f32.powf(semitones_from_a4 as f32 / 12.0);
+                #[allow(clippy::cast_precision_loss, clippy::suboptimal_flops)]
+                let frequency = KNOWN_NOTE_FREQUENCY * (semitones_from_a4 as f32 / 12.0).exp2();
                 
-                let note_full_name = format!("{}{}", note_name, octave);
+                let note_full_name = format!("{note_name}{octave}");
                 table.push((note_full_name, frequency));
             }
         }
@@ -66,7 +75,7 @@ impl FrequencyToNoteLookup {
     }
     
     /// Find the closest note for a given frequency
-    /// Returns (note_name, confidence)
+    /// Returns (`note_name`, confidence)
     pub fn find_closest_note(&self, frequency: f32) -> Option<(String, f32)> {
         if frequency <= 0.0 || frequency > 20000.0 {
             return None;
@@ -77,7 +86,7 @@ impl FrequencyToNoteLookup {
         let mut right = self.table.len() - 1;
         
         while left < right {
-            let mid = (left + right) / 2;
+            let mid = usize::midpoint(left, right);
             if self.table[mid].1 < frequency {
                 left = mid + 1;
             } else {
@@ -86,10 +95,11 @@ impl FrequencyToNoteLookup {
         }
         
         // Check both neighbors to find closest
-        let mut closest_idx = left;
-        if left > 0 && (frequency - self.table[left - 1].1).abs() < (frequency - self.table[left].1).abs() {
-            closest_idx = left - 1;
-        }
+        let closest_idx = if left > 0 && (frequency - self.table[left - 1].1).abs() < (frequency - self.table[left].1).abs() {
+            left - 1
+        } else {
+            left
+        };
         
         let (note_name, base_freq) = &self.table[closest_idx];
         
@@ -121,9 +131,8 @@ impl AudioAnalyzer {
     }
     
     /// Check if a frequency is within the allowed voice profile range
-    /// If profile is NoProfile, all frequencies are allowed
+    /// If profile is `NoProfile`, all frequencies are allowed
     /// Otherwise, aggressively filters frequencies outside the profile range
-    #[allow(dead_code)]
     fn is_frequency_in_profile(frequency: f32, profile: VoiceProfile) -> bool {
         match profile.freq_range() {
             None => true, // NoProfile allows all frequencies
@@ -169,14 +178,13 @@ impl AudioAnalyzer {
         let psd: Vec<f32> = buffer
             .iter()
             .map(|c| {
-                let norm_sq = c.re * c.re + c.im * c.im;
+                let norm_sq = c.re.mul_add(c.re, c.im * c.im);
                 (norm_sq / signal_len_f32).sqrt()
             })
             .collect();
         let psd_time = psd_start.elapsed().as_micros();
         
-        log::debug!("compute_fft({}): lock={}us, convert={}us, process={}us, psd={}us", 
-            signal_len, lock_time, convert_time, process_time, psd_time);
+        log::debug!("compute_fft({signal_len}): lock={lock_time}us, convert={convert_time}us, process={process_time}us, psd={psd_time}us");
         
         psd
     }
@@ -192,7 +200,7 @@ impl AudioAnalyzer {
         let mut mutable_psd = psd.to_vec(); // Make a mutable copy of the power spectrum
 
         // Find global maximum for threshold calculation
-        let max_power = psd[1..psd.len() / 2].iter().cloned().fold(0.0_f32, f32::max);
+        let max_power = psd[1..psd.len() / 2].iter().copied().fold(0.0_f32, f32::max);
         
         // IMPROVED: Lower threshold (10% instead of 20%) to catch even weaker fundamental frequencies
         // Notes: lower frequencies often have less energy than their harmonics
@@ -317,7 +325,7 @@ impl AudioAnalyzer {
             .filter_map(|(frequency, power)| {
                 // Aggressively filter by voice profile if one is selected
                 if !Self::is_frequency_in_profile(frequency, profile) {
-                    log::debug!("Filtered out frequency {:.2} Hz - outside profile {:?}", frequency, profile);
+                    log::debug!("Filtered out frequency {frequency:.2} Hz - outside profile {profile:?}");
                     return None;
                 }
                 
@@ -362,8 +370,7 @@ impl AudioAnalyzer {
         let final_confidence = note_confidence;
         
         let total_time = start.elapsed().as_millis();
-        log::debug!("analyze_chunk: total={}ms, window={}ms, fft={}ms, find={}ms, lookup={}ms", 
-            total_time, window_time, fft_time, find_time, lookup_time);
+        log::debug!("analyze_chunk: total={total_time}ms, window={window_time}ms, fft={fft_time}ms, find={find_time}ms, lookup={lookup_time}ms");
         
         Some((note_name, final_confidence))
     }
@@ -416,7 +423,7 @@ impl AudioAnalyzer {
             audio_data
                 .par_chunks_exact(2)
                 .map(|chunk| {
-                    let sample = i16::from_le_bytes([chunk[0], chunk[1]]) as f32;
+                    let sample = f32::from(i16::from_le_bytes([chunk[0], chunk[1]]));
                     // Normalize to [-1.0, 1.0]
                     sample / 32768.0
                 })
@@ -426,7 +433,7 @@ impl AudioAnalyzer {
             audio_data
                 .chunks_exact(2)
                 .map(|chunk| {
-                    let sample = i16::from_le_bytes([chunk[0], chunk[1]]) as f32;
+                    let sample = f32::from(i16::from_le_bytes([chunk[0], chunk[1]]));
                     // Normalize to [-1.0, 1.0]
                     sample / 32768.0
                 })
@@ -460,8 +467,7 @@ impl AudioAnalyzer {
         let filter_time = filter_start.elapsed().as_millis();
         
         let total_time = start.elapsed().as_millis();
-        log::debug!("analyze_raw_bytes: total={}ms, convert={}ms, analysis={}ms, filter={}ms", 
-            total_time, convert_time, analysis_time, filter_time);
+        log::debug!("analyze_raw_bytes: total={total_time}ms, convert={convert_time}ms, analysis={analysis_time}ms, filter={filter_time}ms");
         
         notes
     }
