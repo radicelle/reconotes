@@ -1,0 +1,103 @@
+# Cargo Make configuration for Recognotes project
+# Platform-agnostic build automation
+
+[config]
+default_to_workspace = false
+
+# Build backend in release mode
+[tasks.build-backend]
+description = "Build backend in release mode"
+cwd = "recognotes-rust-backend"
+command = "cargo"
+args = ["build", "--release"]
+
+# Build GUI in release mode
+[tasks.build-gui]
+description = "Build GUI in release mode"
+cwd = "recognotes-desktop-gui"
+command = "cargo"
+args = ["build", "--release"]
+
+# Copy backend executable to root using duckscript (platform independent)
+[tasks.copy-backend]
+dependencies = ["build-backend"]
+script_runner = "@duckscript"
+script = '''
+ext = set ""
+if is_windows
+    ext = set ".exe"
+end
+cp ./target/release/recognotes-rust-backend${ext} ./recognotes-rust-backend${ext}
+'''
+
+# Copy GUI executable to root using duckscript (platform independent)
+[tasks.copy-gui]
+dependencies = ["build-gui"]
+script_runner = "@duckscript"
+script = '''
+ext = set ""
+if is_windows
+    ext = set ".exe"
+end
+cp ./target/release/recognotes-desktop-gui${ext} ./recognotes-desktop-gui${ext}
+'''
+
+# Build and copy both executables
+[tasks.build-all]
+description = "Build both backend and GUI, copy executables to root"
+dependencies = ["copy-backend", "copy-gui"]
+
+# Default task
+[tasks.default]
+alias = "build-all"
+
+# Clean all build artifacts
+[tasks.clean]
+description = "Clean all build artifacts"
+dependencies = ["clean-backend", "clean-gui"]
+
+[tasks.clean-backend]
+description = "Clean backend artifacts"
+cwd = "recognotes-rust-backend"
+command = "cargo"
+args = ["clean"]
+
+[tasks.clean-gui]
+description = "Clean GUI artifacts"
+cwd = "recognotes-desktop-gui"
+command = "cargo"
+args = ["clean"]
+
+# Check both projects
+[tasks.check]
+description = "Fast check of both projects"
+dependencies = ["check-backend", "check-gui"]
+
+[tasks.check-backend]
+description = "Check backend"
+cwd = "recognotes-rust-backend"
+command = "cargo"
+args = ["check"]
+
+[tasks.check-gui]
+description = "Check GUI"
+cwd = "recognotes-desktop-gui"
+command = "cargo"
+args = ["check"]
+
+# Clippy with aggressive settings
+[tasks.clippy]
+description = "Run clippy with aggressive settings on both projects"
+dependencies = ["clippy-backend", "clippy-gui"]
+
+[tasks.clippy-backend]
+description = "Run clippy on backend"
+cwd = "recognotes-rust-backend"
+command = "cargo"
+args = ["clippy", "--", "-D", "warnings", "-W", "clippy::pedantic", "-W", "clippy::nursery"]
+
+[tasks.clippy-gui]
+description = "Run clippy on GUI"
+cwd = "recognotes-desktop-gui"
+command = "cargo"
+args = ["clippy", "--", "-D", "warnings", "-W", "clippy::pedantic", "-W", "clippy::nursery"]

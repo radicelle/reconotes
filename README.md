@@ -137,14 +137,56 @@ cargo run --release
 
 ## 🚀 Running the Project
 
+### Build System
+
+This project uses **[cargo-make](https://github.com/sagiegurari/cargo-make)** for build automation, providing a platform-independent and maintainable build system.
+
+**Benefits:**
+
+- ✅ Platform-independent (no platform-specific code)
+- ✅ Simplified (uses cargo-make's built-in duckscript)
+- ✅ Maintainable (all build logic in `Makefile.toml`)
+- ✅ Flexible (easy to add new tasks)
+
+**Available Tasks:**
+
+```powershell
+# Build everything (default task)
+cargo make                    # or: cargo make build-all
+
+# Build individual components
+cargo make build-backend      # Build backend in release mode
+cargo make build-gui          # Build GUI in release mode
+
+# Copy executables to root
+cargo make copy-backend       # Build and copy backend executable
+cargo make copy-gui           # Build and copy GUI executable
+
+# Development tasks
+cargo make check              # Fast check of both projects
+cargo make clean              # Clean all build artifacts
+cargo make clippy             # Run clippy with aggressive settings
+
+# Individual component tasks
+cargo make check-backend      # Check backend only
+cargo make check-gui          # Check GUI only
+cargo make clean-backend      # Clean backend only
+cargo make clean-gui          # Clean GUI only
+cargo make clippy-backend     # Clippy on backend only
+cargo make clippy-gui         # Clippy on GUI only
+```
+
 ### Option 1: Build Everything at Once
 
 ```powershell
-# From root directory
+# From root directory (recommended)
+cargo make
+
+# Or use traditional cargo (slower)
 cargo build --release
 ```
 
-This builds both backend and frontend in release mode.
+This builds both backend and frontend in release mode and copies executables to the project root.
 
 ### Option 2: Run Backend Only
 
