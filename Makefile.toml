@@ -63,7 +63,10 @@ ext = set ""
 if is_windows
     ext = set ".exe"
 end
-cp ./target/release/recognotes-rust-backend${ext} ./recognotes-rust-backend${ext}
+source = set ./target/release/recognotes-rust-backend${ext}
+dest = set ./recognotes-rust-backend${ext}
+rm ${dest}
+cp ${source} ${dest}
 '''
 
 # Copy GUI executable to root using duckscript (platform independent)
@@ -75,7 +78,10 @@ ext = set ""
 if is_windows
     ext = set ".exe"
 end
-cp ./target/release/recognotes-desktop-gui${ext} ./recognotes-desktop-gui${ext}
+source = set ./target/release/recognotes-desktop-gui${ext}
+dest = set ./recognotes-desktop-gui${ext}
+rm ${dest}
+cp ${source} ${dest}
 '''
 
 # Build and copy both executables
