@@ -420,23 +420,19 @@ impl AudioAnalyzer {
         let convert_start = std::time::Instant::now();
         let samples: Vec<f32> = if audio_data.len() > 8192 {
             // Parallel conversion for large buffers (>8KB)
-            audio_data
-                .par_chunks_exact(2)
-                .map(|chunk| {
-                    let sample = f32::from(i16::from_le_bytes([chunk[0], chunk[1]]));
-                    // Normalize to [-1.0, 1.0]
-                    sample / 32768.0
-                })
+            // OPTIMIZED: Use bytemuck to reinterpret bytes as i16 slice (no allocation)
+            let i16_samples: &[i16] = bytemuck::cast_slice(audio_data);
+            i16_samples
+                .par_iter()
+                .map(|&s| f32::from(s) / 32768.0)
                 .collect()
         } else {
             // Serial conversion for small buffers (faster due to lower overhead)
-            audio_data
-                .chunks_exact(2)
-                .map(|chunk| {
-                    let sample = f32::from(i16::from_le_bytes([chunk[0], chunk[1]]));
-                    // Normalize to [-1.0, 1.0]
-                    sample / 32768.0
-                })
+            // OPTIMIZED: Use bytemuck to reinterpret bytes as i16 slice (no allocation)
+            let i16_samples: &[i16] = bytemuck::cast_slice(audio_data);
+            i16_samples
+                .iter()
+                .map(|&s| f32::from(s) / 32768.0)
                 .collect()
         };
         let convert_time = convert_start.elapsed().as_millis();
