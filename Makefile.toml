@@ -54,8 +54,8 @@ cwd = "recognotes-desktop-gui"
 command = "cargo"
 args = ["build", "--release"]
 
-# Copy backend executable to root
-[tasks.copy-backend]
+# Copy backend executable to root (Windows)
+[tasks.copy-backend-windows]
 dependencies = ["build-backend"]
 command = "cmd"
 args = ["/C", "copy", ".\\target\\release\\recognotes-rust-backend.exe", ".\\recognotes-rust-backend.exe"]
@@ -66,8 +66,14 @@ dependencies = ["build-backend"]
 command = "sh"
 args = ["-c", "cp ./target/release/recognotes-rust-backend ./recognotes-rust-backend"]
 
-# Copy GUI executable to root
-[tasks.copy-gui]
+# Copy backend - platform agnostic wrapper
+[tasks.copy-backend]
+linux_alias = "copy-backend-unix"
+mac_alias = "copy-backend-unix"
+windows_alias = "copy-backend-windows"
+
+# Copy GUI executable to root (Windows)
+[tasks.copy-gui-windows]
 dependencies = ["build-gui"]
 command = "cmd"
 args = ["/C", "copy", ".\\target\\release\\recognotes-desktop-gui.exe", ".\\recognotes-desktop-gui.exe"]
@@ -78,15 +84,16 @@ dependencies = ["build-gui"]
 command = "sh"
 args = ["-c", "cp ./target/release/recognotes-desktop-gui ./recognotes-desktop-gui"]
 
-# Build and copy both executables (Windows)
+# Copy GUI - platform agnostic wrapper
+[tasks.copy-gui]
+linux_alias = "copy-gui-unix"
+mac_alias = "copy-gui-unix"
+windows_alias = "copy-gui-windows"
+
+# Build and copy both executables (platform agnostic)
 [tasks.build-all]
 description = "Build both backend and GUI, copy executables to root"
 dependencies = ["copy-backend", "copy-gui"]
-
-# Build and copy both executables (Unix)
-[tasks.build-all-unix]
-description = "Build both backend and GUI, copy executables to root"
-dependencies = ["copy-backend-unix", "copy-gui-unix"]
 
 # Default task
 [tasks.default]
