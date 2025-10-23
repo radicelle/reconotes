@@ -16,8 +16,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install cargo-make
-      run: cargo install cargo-make
+    - uses: taiki-e/install-action@cargo-make
     - name: Format
       run: cargo make format-check
     - name: Build
