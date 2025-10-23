@@ -65,7 +65,9 @@ if is_windows
 end
 source = set ./target/release/recognotes-rust-backend${ext}
 dest = set ./recognotes-rust-backend${ext}
-rm ${dest}
+if is_file ${dest}
+    rm ${dest}
+end
 cp ${source} ${dest}
 '''
 
@@ -80,7 +82,9 @@ if is_windows
 end
 source = set ./target/release/recognotes-desktop-gui${ext}
 dest = set ./recognotes-desktop-gui${ext}
-rm ${dest}
+if is_file ${dest}
+    rm ${dest}
+end
 cp ${source} ${dest}
 '''
 
