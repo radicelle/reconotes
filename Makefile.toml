@@ -54,44 +54,39 @@ cwd = "recognotes-desktop-gui"
 command = "cargo"
 args = ["build", "--release"]
 
-# Copy backend executable to root using duckscript (platform independent)
+# Copy backend executable to root
 [tasks.copy-backend]
 dependencies = ["build-backend"]
-script_runner = "@duckscript"
-script = '''
-ext = set ""
-if is_windows
-    ext = set ".exe"
-end
-source = set ./target/release/recognotes-rust-backend${ext}
-dest = set ./recognotes-rust-backend${ext}
-if is_file ${dest}
-    rm ${dest}
-end
-cp ${source} ${dest}
-'''
+command = "cmd"
+args = ["/C", "copy", ".\\target\\release\\recognotes-rust-backend.exe", ".\\recognotes-rust-backend.exe"]
 
-# Copy GUI executable to root using duckscript (platform independent)
+# Copy backend executable to root (Linux/Mac)
+[tasks.copy-backend-unix]
+dependencies = ["build-backend"]
+command = "sh"
+args = ["-c", "cp ./target/release/recognotes-rust-backend ./recognotes-rust-backend"]
+
+# Copy GUI executable to root
 [tasks.copy-gui]
 dependencies = ["build-gui"]
-script_runner = "@duckscript"
-script = '''
-ext = set ""
-if is_windows
-    ext = set ".exe"
-end
-source = set ./target/release/recognotes-desktop-gui${ext}
-dest = set ./recognotes-desktop-gui${ext}
-if is_file ${dest}
-    rm ${dest}
-end
-cp ${source} ${dest}
-'''
+command = "cmd"
+args = ["/C", "copy", ".\\target\\release\\recognotes-desktop-gui.exe", ".\\recognotes-desktop-gui.exe"]
 
-# Build and copy both executables
+# Copy GUI executable to root (Linux/Mac)
+[tasks.copy-gui-unix]
+dependencies = ["build-gui"]
+command = "sh"
+args = ["-c", "cp ./target/release/recognotes-desktop-gui ./recognotes-desktop-gui"]
+
+# Build and copy both executables (Windows)
 [tasks.build-all]
 description = "Build both backend and GUI, copy executables to root"
 dependencies = ["copy-backend", "copy-gui"]
+
+# Build and copy both executables (Unix)
+[tasks.build-all-unix]
+description = "Build both backend and GUI, copy executables to root"
+dependencies = ["copy-backend-unix", "copy-gui-unix"]
 
 # Default task
 [tasks.default]
