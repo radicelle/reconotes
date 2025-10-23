@@ -19,7 +19,7 @@ impl AudioManager {
             selected_device: None,
         }
     }
-    
+
     /// Set the device to use for recording
     pub fn set_device(&mut self, device_name: Option<String>) {
         self.selected_device = device_name;
@@ -29,7 +29,7 @@ impl AudioManager {
     pub fn get_input_devices() -> Vec<String> {
         let host = cpal::default_host();
         let mut devices = vec!["Default".to_string()];
-        
+
         if let Ok(device_iter) = host.input_devices() {
             for device in device_iter {
                 if let Ok(name) = device.name() {
@@ -37,7 +37,7 @@ impl AudioManager {
                 }
             }
         }
-        
+
         devices
     }
 
@@ -46,7 +46,7 @@ impl AudioManager {
     pub fn get_output_devices() -> Vec<String> {
         let host = cpal::default_host();
         let mut devices = vec!["Default".to_string()];
-        
+
         if let Ok(device_iter) = host.output_devices() {
             for device in device_iter {
                 if let Ok(name) = device.name() {
@@ -54,7 +54,7 @@ impl AudioManager {
                 }
             }
         }
-        
+
         devices
     }
 
@@ -65,17 +65,13 @@ impl AudioManager {
         }
 
         let host = cpal::default_host();
-        
+
         // Get the selected device, or default if none selected
         let device = if let Some(device_name) = &self.selected_device {
             // Find device by name
             host.input_devices()
                 .map_err(|e| format!("Failed to get input devices: {e}"))?
-                .find(|d| {
-                    d.name()
-                        .ok()
-                        .is_some_and(|name| name == *device_name)
-                })
+                .find(|d| d.name().ok().is_some_and(|name| name == *device_name))
                 .ok_or_else(|| format!("Device '{device_name}' not found"))?
         } else {
             // None means use default device
@@ -83,7 +79,10 @@ impl AudioManager {
                 .ok_or_else(|| "No input device available".to_string())?
         };
 
-        log::info!("Selected input device: {}", device.name().unwrap_or_default());
+        log::info!(
+            "Selected input device: {}",
+            device.name().unwrap_or_default()
+        );
 
         // Get supported configs and find a compatible one
         let supported_configs = device
@@ -126,11 +125,9 @@ impl AudioManager {
             .ok_or_else(|| "No audio configuration available".to_string())?;
 
         // Use the maximum sample rate the config supports (usually best quality)
-        let actual_sample_rate = std::cmp::min(
-            self.sample_rate,
-            config_range.max_sample_rate().0,
-        );
-        let actual_sample_rate = std::cmp::max(actual_sample_rate, config_range.min_sample_rate().0);
+        let actual_sample_rate = std::cmp::min(self.sample_rate, config_range.max_sample_rate().0);
+        let actual_sample_rate =
+            std::cmp::max(actual_sample_rate, config_range.min_sample_rate().0);
 
         log::info!(
             "Using config: {} channels, target {} Hz (actual: {} Hz), format {:?}",
@@ -154,16 +151,14 @@ impl AudioManager {
 
         // Build an I16 stream - try all supported formats
         let stream = match config_range.sample_format() {
-            cpal::SampleFormat::I16 => {
-                device.build_input_stream(
-                    &config,
-                    move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                        let mut buffer = audio_buffer_i16.lock().unwrap();
-                        buffer.extend_from_slice(data);
-                    },
-                    |err| log::error!("Stream error: {err}"),
-                )
-            }
+            cpal::SampleFormat::I16 => device.build_input_stream(
+                &config,
+                move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                    let mut buffer = audio_buffer_i16.lock().unwrap();
+                    buffer.extend_from_slice(data);
+                },
+                |err| log::error!("Stream error: {err}"),
+            ),
             cpal::SampleFormat::U16 => {
                 device.build_input_stream(
                     &config,
@@ -197,7 +192,9 @@ impl AudioManager {
         }
         .map_err(|e| format!("Failed to build stream: {e}"))?;
 
-        stream.play().map_err(|e| format!("Failed to play stream: {e}"))?;
+        stream
+            .play()
+            .map_err(|e| format!("Failed to play stream: {e}"))?;
 
         self.stream = Some(stream);
         self.recording = true;
@@ -219,7 +216,12 @@ impl AudioManager {
         self.recording = false;
 
         // Extract audio data from buffer
-        let samples = self.audio_buffer.lock().unwrap().drain(..).collect::<Vec<_>>();
+        let samples = self
+            .audio_buffer
+            .lock()
+            .unwrap()
+            .drain(..)
+            .collect::<Vec<_>>();
 
         // Convert i16 samples to bytes
         let mut audio_data = Vec::with_capacity(samples.len() * 2);
@@ -268,7 +270,7 @@ impl AudioManager {
         // Take only up to chunk_size bytes worth of samples
         let max_samples = chunk_size / 2; // 2 bytes per i16 sample
         let take_count = std::cmp::min(buffer.len(), max_samples);
-        
+
         let samples: Vec<i16> = buffer.drain(..take_count).collect();
         drop(buffer);
 
@@ -290,4 +292,3 @@ impl AudioManager {
         self.sample_rate
     }
 }
-

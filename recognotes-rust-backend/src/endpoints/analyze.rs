@@ -2,12 +2,12 @@ use actix_web::{web, HttpResponse};
 use serde_json::json;
 use std::time::SystemTime;
 
+use crate::models::VoiceProfile;
 use crate::{
     models::{AnalysisResult, AudioData, DetectedNote},
     utils::{confidence_weight, low_frequency_bonus, note_to_frequency},
     AppState, ANALYZER,
 };
-use crate::models::VoiceProfile;
 
 /// Analyze audio endpoint - processes raw audio and returns detected notes
 pub async fn analyze_audio(
@@ -21,18 +21,16 @@ pub async fn analyze_audio(
 
     if audio.sample_rate == 0 {
         log::error!("Invalid sample_rate: 0");
-        return HttpResponse::BadRequest().json(
-            json!({"error": "sample_rate must be greater than 0"})
-        );
+        return HttpResponse::BadRequest()
+            .json(json!({"error": "sample_rate must be greater than 0"}));
     }
 
     // Decode audio data (base64 string)
     let audio_bytes = match audio.to_bytes() {
         Ok(bytes) => bytes,
         Err(e) => {
-            return HttpResponse::BadRequest().json(
-                json!({"error": format!("Audio decode error: {}", e)})
-            );
+            return HttpResponse::BadRequest()
+                .json(json!({"error": format!("Audio decode error: {}", e)}));
         }
     };
 
@@ -77,16 +75,24 @@ pub async fn analyze_audio(
             .into_iter()
             .filter(|(_, confidence, _)| *confidence >= 0.10)
             .map(|(note, confidence, intensity)| {
-                let note = DetectedNote { note, confidence, intensity };
+                let note = DetectedNote {
+                    note,
+                    confidence,
+                    intensity,
+                };
                 let freq = note_to_frequency(&note.note);
-                let score = note.intensity.mul_add(0.1, low_frequency_bonus(freq).mul_add(0.7, confidence_weight(note.confidence) * 0.2));
+                let score = note.intensity.mul_add(
+                    0.1,
+                    low_frequency_bonus(freq)
+                        .mul_add(0.7, confidence_weight(note.confidence) * 0.2),
+                );
                 (note, score)
             })
             .collect();
 
         // Sort once by pre-computed scores
         notes_with_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        
+
         // Extract top 3 notes
         let notes: Vec<DetectedNote> = notes_with_scores
             .into_iter()
@@ -123,7 +129,14 @@ pub async fn analyze_audio(
         let notes_str = result
             .notes
             .iter()
-            .map(|n| format!("{}({}%, {:.0})", n.note, (n.confidence * 100.0).round() as u32, n.intensity * 100.0))
+            .map(|n| {
+                format!(
+                    "{}({}%, {:.0})",
+                    n.note,
+                    (n.confidence * 100.0).round() as u32,
+                    n.intensity * 100.0
+                )
+            })
             .collect::<Vec<_>>()
             .join(", ");
         log::info!(

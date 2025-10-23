@@ -24,7 +24,7 @@ pub fn note_to_frequency(note_name: &str) -> f32 {
         n if n.starts_with("B1") => 61.7,
         n if n.starts_with("B2") => 123.5,
         n if n.starts_with("B3") => 247.0,
-        _ => 440.0,  // Default to A4
+        _ => 440.0, // Default to A4
     }
 }
 

@@ -7,15 +7,15 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
         // Top bar: Title + Status
         ui.horizontal(|ui| {
             ui.heading("🎵 RecogNotes");
-            
+
             ui.separator();
-            
+
             if app.backend_connected {
                 ui.colored_label(egui::Color32::GREEN, "● Connected");
             } else {
                 ui.colored_label(egui::Color32::RED, "● Offline");
             }
-            
+
             if app.recording {
                 ui.colored_label(egui::Color32::RED, "● Recording");
             }
@@ -43,14 +43,26 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
         ui.horizontal(|ui| {
             // Voice profile selector
             ui.label("Voice Profile:");
-            
-            let available_profiles = ["no_profile", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"];
-            
+
+            let available_profiles = [
+                "no_profile",
+                "soprano",
+                "mezzo",
+                "alto",
+                "tenor",
+                "baritone",
+                "bass",
+            ];
+
             egui::ComboBox::from_id_source("voice_profile_combo")
                 .selected_text(app.selected_profile.as_str())
                 .show_ui(ui, |ui| {
                     for profile in &available_profiles {
-                        ui.selectable_value(&mut app.selected_profile, (*profile).to_string(), *profile);
+                        ui.selectable_value(
+                            &mut app.selected_profile,
+                            (*profile).to_string(),
+                            *profile,
+                        );
                     }
                 });
 
@@ -65,7 +77,11 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
                     "bass" => "C2-C4 (65-261 Hz)",
                     _ => "",
                 };
-                ui.label(egui::RichText::new(profile_info).size(11.0).color(egui::Color32::GRAY));
+                ui.label(
+                    egui::RichText::new(profile_info)
+                        .size(11.0)
+                        .color(egui::Color32::GRAY),
+                );
             }
 
             ui.separator();
@@ -73,17 +89,21 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
             // Input device selector
             ui.label("Input device:");
             let input_devices = crate::audio::AudioManager::get_input_devices();
-            
+
             egui::ComboBox::from_id_source("input_device_combo")
                 .selected_text(app.selected_input_device.as_deref().unwrap_or("Default"))
                 .show_ui(ui, |ui| {
                     // Always show "Default" option
                     ui.selectable_value(&mut app.selected_input_device, None, "Default");
-                    
+
                     // Show all other devices
                     for device in input_devices {
                         if device != "Default" {
-                            ui.selectable_value(&mut app.selected_input_device, Some(device.clone()), device);
+                            ui.selectable_value(
+                                &mut app.selected_input_device,
+                                Some(device.clone()),
+                                device,
+                            );
                         }
                     }
                 });
@@ -93,12 +113,13 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
 
         // Control bar
         ui.horizontal(|ui| {
-            if ui.button(if app.recording {
-                "⏹ Stop"
-            } else {
-                "🎤 Record"
-            })
-            .clicked()
+            if ui
+                .button(if app.recording {
+                    "⏹ Stop"
+                } else {
+                    "🎤 Record"
+                })
+                .clicked()
             {
                 if app.recording {
                     app.stop_recording();
@@ -124,12 +145,15 @@ pub fn draw_ui(app: &mut RecogNotesApp, ctx: &egui::Context) {
         // MAIN AREA: Just notes display at bottom
         let available_width = ui.available_width();
         let available_height = ui.available_height();
-        
+
         let notes_response = ui.allocate_rect(
-            egui::Rect::from_min_size(ui.cursor().min, egui::Vec2::new(available_width, available_height)),
+            egui::Rect::from_min_size(
+                ui.cursor().min,
+                egui::Vec2::new(available_width, available_height),
+            ),
             egui::Sense::hover(),
         );
-        
+
         // Draw notes spectrum with vertical bars and fade effect
         crate::visualization::draw_vertical_bars_with_fade(
             ui,

@@ -1,7 +1,7 @@
 use crate::DetectedNote;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use base64::{Engine, engine::general_purpose::STANDARD};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AnalyzeRequest {
@@ -33,10 +33,10 @@ pub async fn analyze_audio(
     let start = Instant::now();
     let data_size = audio_data.len();
     let profile_str = profile.as_deref().unwrap_or("no_profile").to_string();
-    
+
     // Encode audio as base64 (much faster than JSON array encoding)
     let audio_b64 = STANDARD.encode(&audio_data);
-    
+
     let request = AnalyzeRequest {
         audio_data: audio_b64.clone(),
         sample_rate,
@@ -45,7 +45,7 @@ pub async fn analyze_audio(
 
     // Create new client for each request (reqwest handles connection pooling internally)
     let client = reqwest::Client::new();
-    
+
     log::debug!(
         "Sending to backend: {} bytes audio (base64), {} Hz sample rate, profile: {}, payload size: {}B",
         data_size,
@@ -53,13 +53,10 @@ pub async fn analyze_audio(
         profile_str,
         audio_b64.len()
     );
-    
+
     let response = tokio::time::timeout(
-        std::time::Duration::from_secs(5),  // 5 second timeout
-        client
-            .post(&url)
-            .json(&request)
-            .send()
+        std::time::Duration::from_secs(5), // 5 second timeout
+        client.post(&url).json(&request).send(),
     )
     .await
     .map_err(|_| "Backend request timeout (5s)".to_string())?
@@ -90,11 +87,11 @@ pub async fn analyze_audio(
 /// Uses fast timeout to fail quickly if backend is down
 pub async fn check_health(backend_url: &str) -> Result<(), String> {
     let url = format!("{backend_url}/health");
-    
+
     let client = reqwest::Client::new();
     let response = tokio::time::timeout(
-        std::time::Duration::from_secs(1),  // Quick timeout for health checks
-        client.get(&url).send()
+        std::time::Duration::from_secs(1), // Quick timeout for health checks
+        client.get(&url).send(),
     )
     .await
     .map_err(|_| "Backend health check timeout".to_string())?
@@ -103,7 +100,9 @@ pub async fn check_health(backend_url: &str) -> Result<(), String> {
     if response.status().is_success() {
         Ok(())
     } else {
-        Err(format!("Backend health check failed: {}", response.status()))
+        Err(format!(
+            "Backend health check failed: {}",
+            response.status()
+        ))
     }
-
 }

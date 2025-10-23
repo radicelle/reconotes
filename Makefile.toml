@@ -4,6 +4,42 @@
 [config]
 default_to_workspace = false
 
+# Format backend code with rustfmt
+[tasks.format-backend]
+description = "Format backend code with rustfmt"
+cwd = "recognotes-rust-backend"
+command = "cargo"
+args = ["fmt", "--all"]
+
+# Format GUI code with rustfmt
+[tasks.format-gui]
+description = "Format GUI code with rustfmt"
+cwd = "recognotes-desktop-gui"
+command = "cargo"
+args = ["fmt", "--all"]
+
+# Format all code
+[tasks.format]
+description = "Format all code with rustfmt"
+dependencies = ["format-backend", "format-gui"]
+
+# Check formatting without modifying
+[tasks.format-check-backend]
+description = "Check backend code formatting"
+cwd = "recognotes-rust-backend"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.format-check-gui]
+description = "Check GUI code formatting"
+cwd = "recognotes-desktop-gui"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.format-check]
+description = "Check code formatting without modifying"
+dependencies = ["format-check-backend", "format-check-gui"]
+
 # Build backend in release mode
 [tasks.build-backend]
 description = "Build backend in release mode"

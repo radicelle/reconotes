@@ -12,11 +12,14 @@ fn main() -> Result<(), eframe::Error> {
     env_logger::Builder::from_env(
         env_logger::Env::new()
             .default_filter_or("warn")
-            .write_style("always")
+            .write_style("always"),
     )
     .filter_module("recognotes_desktop_gui", log::LevelFilter::Info)
     .filter_module("recognotes_desktop_gui::audio", log::LevelFilter::Warn)
-    .filter_module("recognotes_desktop_gui::backend_client", log::LevelFilter::Warn)
+    .filter_module(
+        "recognotes_desktop_gui::backend_client",
+        log::LevelFilter::Warn,
+    )
     .filter_module("reqwest", log::LevelFilter::Error)
     .filter_module("hyper", log::LevelFilter::Error)
     .filter_module("tokio", log::LevelFilter::Error)
@@ -41,14 +44,12 @@ fn main() -> Result<(), eframe::Error> {
     let result = eframe::run_native(
         "RecogNotes Desktop",
         options,
-        Box::new(|cc| {
-            Ok(Box::new(RecogNotesApp::new(cc)))
-        }),
+        Box::new(|cc| Ok(Box::new(RecogNotesApp::new(cc)))),
     );
 
     drop(guard);
     drop(rt);
-    
+
     result
 }
 
@@ -57,7 +58,7 @@ fn load_icon() -> Option<egui::IconData> {
     let image = image::load_from_memory(icon_bytes).ok()?;
     let rgba = image.to_rgba8();
     let (w, h) = image.dimensions();
-    
+
     Some(egui::IconData {
         rgba: rgba.into_raw(),
         width: w,
@@ -69,15 +70,15 @@ fn create_default_icon() -> egui::IconData {
     // Create a simple 64x64 default icon (music note blue square)
     let size = 64;
     let mut rgba = vec![0u8; (size * size * 4) as usize];
-    
+
     // Fill with light blue background
     for i in (0..rgba.len()).step_by(4) {
-        rgba[i] = 100;      // R
-        rgba[i + 1] = 150;  // G
-        rgba[i + 2] = 200;  // B
-        rgba[i + 3] = 255;  // A
+        rgba[i] = 100; // R
+        rgba[i + 1] = 150; // G
+        rgba[i + 2] = 200; // B
+        rgba[i + 3] = 255; // A
     }
-    
+
     egui::IconData {
         rgba,
         width: size as u32,
@@ -94,40 +95,40 @@ pub struct RecogNotesApp {
     // UI state
     recording: bool,
     backend_connected: bool,
-    backend_checked: bool,  // Track if we've already checked health
-    
+    backend_checked: bool, // Track if we've already checked health
+
     // Audio
     #[allow(clippy::arc_with_non_send_sync)]
     audio_manager: Arc<RwLock<audio::AudioManager>>,
-    
+
     // Results
     detected_notes: Vec<DetectedNote>,
     detected_notes_history: Vec<(DetectedNote, f64)>, // (note, timestamp)
     last_error: Option<String>,
-    
+
     // Backend URL
     backend_url: String,
-    
+
     // Voice profile for filtering notes
-    selected_profile: String,  // "no_profile", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"
-    
+    selected_profile: String, // "no_profile", "soprano", "mezzo", "alto", "tenor", "baritone", "bass"
+
     // Channel for receiving notes from async tasks
     notes_receiver: std::sync::mpsc::Receiver<Vec<DetectedNote>>,
     notes_sender: std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Sender<Vec<DetectedNote>>>>,
-    
+
     // Channel for backend health status
     health_receiver: std::sync::mpsc::Receiver<bool>,
     health_sender: std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Sender<bool>>>,
-    
+
     // Rolling history of detected notes with timestamps (last ~1 second)
     notes_with_timestamps: Vec<(DetectedNote, std::time::Instant)>,
-    
+
     // Track when we last had ANY notes (for display timing)
     last_notes_received_time: std::time::Instant,
-    
+
     // How long to keep displaying notes after they were last detected (1 second)
     note_display_duration: std::time::Duration,
-    
+
     // Sliding window for 1-second audio analysis
     sliding_window_buffer: Vec<i16>,
     // Size of sliding window in samples (1 second at sample_rate)
@@ -151,7 +152,7 @@ impl Default for RecogNotesApp {
     fn default() -> Self {
         Self::new_with_config(
             "http://localhost:5000".to_string(),
-            48000,  // 48kHz is more commonly supported on Windows
+            48000, // 48kHz is more commonly supported on Windows
         )
     }
 }
@@ -160,18 +161,18 @@ impl RecogNotesApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         Self::new_with_config(
             "http://localhost:5000".to_string(),
-            48000,  // 48kHz is more commonly supported on Windows
+            48000, // 48kHz is more commonly supported on Windows
         )
     }
 
     fn new_with_config(backend_url: String, sample_rate: u32) -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
         let (health_tx, health_rx) = std::sync::mpsc::channel();
-        
+
         // Sliding window: 2 seconds of audio for better low-frequency resolution
         // At 48kHz: 48000 * 2 = 96000 samples
         let sliding_window_size = sample_rate as usize * 2;
-        
+
         Self {
             recording: false,
             backend_connected: false,
@@ -201,16 +202,20 @@ impl RecogNotesApp {
     fn start_recording(&mut self) {
         self.recording = true;
         self.last_error = None;
-        
+
         // Pre-fill the sliding window buffer with silence (2 seconds worth)
         self.sliding_window_buffer.clear();
-        self.sliding_window_buffer.extend(std::iter::repeat_n(0i16, self.sliding_window_size));
-        log::debug!("Initialized sliding window buffer with {} silent samples", self.sliding_window_size);
-        
+        self.sliding_window_buffer
+            .extend(std::iter::repeat_n(0i16, self.sliding_window_size));
+        log::debug!(
+            "Initialized sliding window buffer with {} silent samples",
+            self.sliding_window_size
+        );
+
         // Set the device on the audio manager before starting
         let mut manager = self.audio_manager.write();
         manager.set_device(self.selected_input_device.clone());
-        
+
         if let Err(e) = manager.start_recording() {
             self.last_error = Some(format!("Failed to start recording: {e}"));
             self.recording = false;
@@ -219,7 +224,7 @@ impl RecogNotesApp {
 
     fn stop_recording(&mut self) {
         self.recording = false;
-        
+
         let mut manager = self.audio_manager.write();
         if let Err(e) = manager.stop_recording() {
             self.last_error = Some(format!("Failed to stop recording: {e}"));
@@ -275,7 +280,9 @@ impl RecogNotesApp {
         // Spawn async task to send to backend
         tokio::spawn(async move {
             let client_start = std::time::Instant::now();
-            match backend_client::analyze_audio(&backend_url, audio_data, sample_rate, profile).await {
+            match backend_client::analyze_audio(&backend_url, audio_data, sample_rate, profile)
+                .await
+            {
                 Ok(notes) => {
                     let total_client_ms = client_start.elapsed().as_millis();
                     log::info!(
@@ -300,7 +307,11 @@ impl RecogNotesApp {
             if !notes.is_empty() {
                 log::info!("🎵 Received {} notes from backend", notes.len());
                 for note in &notes {
-                    log::info!("   - {} ({:.0}% confidence)", note.note, note.confidence * 100.0);
+                    log::info!(
+                        "   - {} ({:.0}% confidence)",
+                        note.note,
+                        note.confidence * 100.0
+                    );
 
                     // Add each note to rolling history with timestamp
                     self.notes_with_timestamps.push((note.clone(), now));
@@ -310,7 +321,8 @@ impl RecogNotesApp {
 
             // Clean up old notes (older than display duration)
             let cutoff_time = now.checked_sub(self.note_display_duration).unwrap();
-            self.notes_with_timestamps.retain(|(_, timestamp)| *timestamp > cutoff_time);
+            self.notes_with_timestamps
+                .retain(|(_, timestamp)| *timestamp > cutoff_time);
 
             // Build current detected_notes from the recent history (for UI display)
             let mut unique_notes = std::collections::HashMap::new();
@@ -331,7 +343,8 @@ impl RecogNotesApp {
         } else {
             // If no new notes received, clean up old ones based on display duration
             let cutoff_time = now.checked_sub(self.note_display_duration).unwrap();
-            self.notes_with_timestamps.retain(|(_, timestamp)| *timestamp > cutoff_time);
+            self.notes_with_timestamps
+                .retain(|(_, timestamp)| *timestamp > cutoff_time);
 
             // If all notes have expired, clear display
             if self.notes_with_timestamps.is_empty() {
@@ -364,7 +377,7 @@ impl eframe::App for RecogNotesApp {
 
         // Continuous analysis if recording
         self.continuous_analysis();
-        
+
         // Request repaint to keep analysis running at the sound format frequency
         // This ensures the update loop runs continuously even without mouse movement
         // Also needed for smooth fade animation
@@ -378,4 +391,3 @@ impl eframe::App for RecogNotesApp {
         ui::draw_ui(self, ctx);
     }
 }
-
